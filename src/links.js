@@ -105,6 +105,7 @@ export async function addLink(input) {
   const saved = { ...item, addedAt: new Date().toISOString() };
   links.unshift(saved);
   saveLinks(links);
+  console.log(`[links] เพิ่ม ${saved.id} (${saved.name.slice(0, 40)})`);
   return { item: saved, added: true };
 }
 
@@ -112,5 +113,6 @@ export function removeLink(id) {
   const links = loadLinks();
   const next = links.filter((l) => l.id !== id);
   saveLinks(next);
+  console.log(`[links] ลบ ${id}`);
   return links.length !== next.length;
 }

@@ -304,6 +304,9 @@ function renderLinks() {
           <div class="lcard-name" title="${escapeHtml(l.name)}">${escapeHtml(l.name)}</div>
           ${stats}
           ${miniScoresHtml(l.id)}
+          ${l.type === 'product' && !analysisOf(l.id) && canEdit && !state.data.canAnalyze
+            ? '<div class="lcard-stats">🤖 ยังวิเคราะห์ด้วย AI ไม่ได้: ต้องใส่ ANTHROPIC_API_KEY ในไฟล์ .env ก่อน</div>'
+            : ''}
         </div>
         <div class="lcard-actions">
           ${l.type === 'product' ? analyzeButtonHtml(l.id, true) : ''}
@@ -331,9 +334,14 @@ async function submitLink(e) {
       body: JSON.stringify({ url: $('linkInput').value }),
     });
     $('linkInput').value = '';
-    showLinkMsg(added ? `เพิ่ม "${item.name.slice(0, 60)}" แล้ว` : 'ลิงก์นี้มีอยู่แล้ว', true);
     await loadData();
     renderLinks();
+    // มี API key → วิเคราะห์ให้ทันทีโดยไม่ต้องกดปุ่ม
+    const autoBtn = item.type === 'product' && state.data.canAnalyze && !analysisOf(item.id)
+      ? document.querySelector(`[data-analyze="${CSS.escape(item.id)}"]`)
+      : null;
+    showLinkMsg(`${added ? `เพิ่ม "${item.name.slice(0, 60)}" แล้ว` : 'ลิงก์นี้มีอยู่แล้ว'}${autoBtn ? ' · กำลังวิเคราะห์ด้วย AI…' : ''}`, true);
+    if (autoBtn) runAnalysis(item.id, autoBtn);
   } catch (err) {
     showLinkMsg(err.message, false);
   } finally {
@@ -342,6 +350,8 @@ async function submitLink(e) {
 }
 
 async function unlink(id) {
+  const name = state.data.links?.find((l) => l.id === id)?.name ?? '';
+  if (!confirm(`ลบ "${name.slice(0, 50)}" ออกจากรายการที่ติดตาม?`)) return;
   await api(`api/links/${encodeURIComponent(id)}`, { method: 'DELETE' });
   await loadData();
   renderLinks();
