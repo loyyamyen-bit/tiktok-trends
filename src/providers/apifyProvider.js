@@ -8,6 +8,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CATEGORIES, COUNTRIES } from './mockProvider.js';
+import { loadLinks } from '../links.js';
+
+// หมวดของสินค้าที่มาจากลิงก์/ร้านที่ผู้ใช้เพิ่มเอง (actor ไม่บอกหมวดตามที่เราแบ่ง)
+const OTHER = { id: 'other', name: 'อื่น ๆ', icon: '🛍️' };
 
 const CONFIG_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'config', 'apify.json');
 const API_BASE = process.env.APIFY_BASE_URL || 'https://api.apify.com/v2';
@@ -65,10 +69,11 @@ export function normalizeItem(item, country, category) {
     country,
     price: parsePrice(item.price ?? item.price_min ?? item.sale_price) ?? 0,
     shop: item.shop_name ?? item.seller_name ?? item.shopName ?? '',
-    icon: CATEGORIES.find((c) => c.id === category)?.icon ?? '🛍️',
+    icon: [...CATEGORIES, OTHER].find((c) => c.id === category)?.icon ?? '🛍️',
     image: images[0] ?? null,
     images,
     url: item.product_url ?? item.url ?? item.productUrl ?? null,
+    shopUrl: item.shop_url ?? item.shopUrl ?? item.seller_url ?? item.sellerUrl ?? item.shopLink ?? null,
     // ฟิลด์สำหรับ Affiliate — มีเฉพาะบาง actor ถ้าไม่มีหน้าเว็บจะซ่อนคอลัมน์นั้นเอง
     commissionRate: parseRate(item.commission_rate ?? item.commissionRate),
     soldTotal,
@@ -78,10 +83,13 @@ export function normalizeItem(item, country, category) {
 }
 
 // input ของ actor แต่ละตัวต่างกัน — เพิ่มตัวใหม่ได้ที่นี่
-function buildInput(actorId, country, keywords, maxItems) {
+// job มี keywords (ค้นหา) หรือ productUrls / shopUrls (จากลิงก์ที่ผู้ใช้เพิ่ม)
+function buildInput(actorId, country, job, maxItems) {
   if (actorId.startsWith('bovi/')) {
     return {
-      keywords,
+      ...(job.keywords ? { keywords: job.keywords } : {}),
+      ...(job.productUrls ? { productUrls: job.productUrls } : {}),
+      ...(job.shopUrls ? { shopUrls: job.shopUrls } : {}),
       maxResults: maxItems,
       proxyConfiguration: {
         useApifyProxy: true,
@@ -91,7 +99,8 @@ function buildInput(actorId, country, keywords, maxItems) {
       },
     };
   }
-  return { mode: 'search', region: country.toLowerCase(), search_keywords: keywords, max_items: maxItems };
+  if (!job.keywords) return null; // actor นี้ดูสินค้าจากลิงก์ร้านไทยไม่ได้
+  return { mode: 'search', region: country.toLowerCase(), search_keywords: job.keywords, max_items: maxItems };
 }
 
 async function apify(pathname, token, options = {}) {
@@ -140,7 +149,7 @@ export const apifyProvider = {
 
   async getCatalog() {
     const codes = Object.keys(loadConfig().keywords);
-    return { categories: CATEGORIES, countries: COUNTRIES.filter((c) => codes.includes(c.code)), products: [] };
+    return { categories: [...CATEGORIES, OTHER], countries: COUNTRIES.filter((c) => codes.includes(c.code)), products: [] };
   },
 
   async fetchSnapshot() {
@@ -150,10 +159,21 @@ export const apifyProvider = {
 
     // รัน actor หนึ่งครั้งต่อ (ประเทศ, หมวด) เพื่อให้รู้ว่าสินค้าแต่ละชิ้นอยู่หมวดไหน
     const jobs = Object.entries(config.keywords).flatMap(([country, byCategory]) =>
-      Object.entries(byCategory).map(([category, keywords]) => ({ country, category, keywords })),
+      Object.entries(byCategory).map(([category, keywords]) => ({ country, category, keywords, max: config.maxItemsPerKeyword * keywords.length })),
     );
+    // ลิงก์ที่ผู้ใช้เพิ่ม — ต่อท้ายงานค้นหา เพื่อให้สินค้าที่เจอทั้งสองทางได้หมวดจากการค้นหา
+    const links = loadLinks();
+    const productUrls = links.filter((l) => l.type === 'product').map((l) => l.url);
+    const shopUrls = links.filter((l) => l.type === 'shop').map((l) => l.url);
+    if (productUrls.length) jobs.push({ country: 'TH', category: OTHER.id, productUrls, max: productUrls.length });
+    if (shopUrls.length) jobs.push({ country: 'TH', category: OTHER.id, shopUrls, max: shopUrls.length * (config.maxItemsPerShop ?? 30) });
+
     const results = await mapLimit(jobs, config.concurrency ?? 2, async (job) => {
-      const input = buildInput(config.actorId, job.country, job.keywords, config.maxItemsPerKeyword * job.keywords.length);
+      const input = buildInput(config.actorId, job.country, job, job.max);
+      if (!input) {
+        console.warn(`[apify] ${config.actorId} ไม่รองรับการดึงจากลิงก์ ข้าม`);
+        return [];
+      }
       try {
         const items = await runActor(config.actorId, input, token);
         console.log(`[apify] ${job.country}/${job.category}: ได้ ${items.length} รายการ`);

@@ -92,6 +92,26 @@ main > * { min-width: 0; }
 #dBadges { margin: -4px 0 12px; }
 .note-field { display: grid; gap: 4px; margin-top: 14px; font-size: 12px; color: var(--muted); }
 .note-field textarea { font: inherit; font-size: 14px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); resize: vertical; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.btn.sm { font-size: 12px; padding: 3px 10px; }
+.link-form { display: flex; gap: 8px; margin-bottom: 12px; }
+.link-form input { flex: 1; min-width: 0; font: inherit; font-size: 14px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+.link-msg { margin: -4px 0 12px; font-size: 13px; }
+.link-msg.err { color: var(--down); }
+.link-msg.ok { color: var(--up); }
+.link-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+.lcard { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--surface); }
+.lcard.has-data { cursor: pointer; }
+.lcard.has-data:hover { border-color: var(--muted); }
+.lcard-img { aspect-ratio: 1; background: var(--hover); display: grid; place-items: center; font-size: 48px; overflow: hidden; }
+.lcard-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.lcard-body { padding: 10px; display: grid; gap: 6px; flex: 1; align-content: start; }
+.lcard-name { font-weight: 500; font-size: 14px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.lcard-stats { font-size: 12px; color: var(--muted); }
+.lcard-stats b { color: var(--text); font-weight: 600; }
+.lcard-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 10px 10px; }
+.link-row { display: flex; flex-wrap: wrap; gap: 8px; margin: -4px 0 12px; }
+.link-row:empty { display: none; }
 .help { margin: -4px 0 0; font-size: 13px; color: var(--muted); }
 .sub-val { display: block; font-size: 12px; color: var(--muted); font-weight: 400; }
 .com-rate { font-weight: 600; color: var(--up); }

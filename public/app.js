@@ -176,6 +176,96 @@ function nameHtml(p) {
   return `<a href="${escapeHtml(p.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${name}</a>`;
 }
 
+function safeUrl(u) {
+  return /^https?:\/\//.test(u ?? '') ? u : null;
+}
+
+// ปุ่มลิงก์สินค้า / คัดลอกลิงก์ / ลิงก์ร้าน
+function linkButtonsHtml({ url, shopUrl }, small = false) {
+  const cls = `btn${small ? ' sm' : ''}`;
+  const out = [];
+  if (safeUrl(url)) {
+    out.push(`<a class="${cls}" href="${escapeHtml(url)}" target="_blank" rel="noopener" data-stop>เปิดใน TikTok ↗</a>`);
+    out.push(`<button type="button" class="${cls}" data-copy="${escapeHtml(url)}">📋 คัดลอกลิงก์</button>`);
+  }
+  if (safeUrl(shopUrl)) out.push(`<a class="${cls}" href="${escapeHtml(shopUrl)}" target="_blank" rel="noopener" data-stop>🏪 ร้านค้า ↗</a>`);
+  return out.join('');
+}
+
+async function copyText(btn) {
+  try {
+    await navigator.clipboard.writeText(btn.dataset.copy);
+    const label = btn.textContent;
+    btn.textContent = '✓ คัดลอกแล้ว';
+    setTimeout(() => { btn.textContent = label; }, 1500);
+  } catch {
+    prompt('คัดลอกลิงก์นี้', btn.dataset.copy);
+  }
+}
+
+// การ์ดสินค้า/ร้านที่เพิ่มจากลิงก์ — ถ้าสินค้านั้นมีข้อมูลยอดขายแล้ว แสดงตัวเลขและกดดูรายละเอียดได้
+function renderLinks() {
+  const links = state.data.links ?? [];
+  const canEdit = state.data.canRefresh;
+  $('linksCard').hidden = !canEdit && links.length === 0;
+  $('linkForm').hidden = !canEdit;
+  $('linkCount').textContent = links.length ? `(${links.length})` : '';
+  const metrics = new Map(ranking(state.data, { days: 7, limit: 100000 }).map((r) => [r.id, r]));
+
+  $('linkCards').innerHTML = links.length
+    ? links.map((l) => {
+      const m = metrics.get(l.id);
+      const img = l.image ?? m?.image;
+      const stats = m
+        ? `<div class="lcard-stats">฿${fmt.format(m.price)} · ขาย 7 วัน <b>${fmt.format(m.sales)}</b> ชิ้น${m.rate != null ? ` · คอม ${m.commissionEstimated ? '~' : ''}${pct(m.rate)}` : ''}</div>${badgesHtml(m)}`
+        : `<div class="lcard-stats">${l.type === 'shop' ? 'ร้านค้า · ' : ''}รอข้อมูลราคาและยอดขาย${state.data.provider === 'mock' ? ' (ต้องใช้ข้อมูลจริงจาก Apify)' : ' (เก็บข้อมูลครั้งถัดไป)'}</div>`;
+      return `<div class="lcard ${m ? 'has-data' : ''}" data-link="${escapeHtml(l.id)}">
+        <div class="lcard-img">${img ? `<img src="${escapeHtml(img)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith('${l.type === 'shop' ? '🏪' : '🛍️'}')">` : (l.type === 'shop' ? '🏪' : '🛍️')}</div>
+        <div class="lcard-body">
+          <div class="lcard-name" title="${escapeHtml(l.name)}">${escapeHtml(l.name)}</div>
+          ${stats}
+        </div>
+        <div class="lcard-actions">
+          ${linkButtonsHtml({ url: l.url, shopUrl: m?.shopUrl }, true)}
+          ${canEdit ? `<button type="button" class="btn sm" data-unlink="${escapeHtml(l.id)}" aria-label="ลบ">✕</button>` : ''}
+        </div>
+      </div>`;
+    }).join('')
+    : '<p class="muted">ยังไม่มีลิงก์ ลองวางลิงก์สินค้าจากแอป TikTok ด้านบน</p>';
+}
+
+function showLinkMsg(text, ok) {
+  $('linkMsg').hidden = false;
+  $('linkMsg').textContent = text;
+  $('linkMsg').className = `link-msg ${ok ? 'ok' : 'err'}`;
+}
+
+async function submitLink(e) {
+  e.preventDefault();
+  $('linkAdd').disabled = true;
+  try {
+    const { item, added } = await api('api/links', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: $('linkInput').value }),
+    });
+    $('linkInput').value = '';
+    showLinkMsg(added ? `เพิ่ม "${item.name.slice(0, 60)}" แล้ว` : 'ลิงก์นี้มีอยู่แล้ว', true);
+    await loadData();
+    renderLinks();
+  } catch (err) {
+    showLinkMsg(err.message, false);
+  } finally {
+    $('linkAdd').disabled = false;
+  }
+}
+
+async function unlink(id) {
+  await api(`api/links/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  await loadData();
+  renderLinks();
+}
+
 function renderGallery(product) {
   const images = product.images?.length ? product.images : product.image ? [product.image] : [];
   $('dGallery').hidden = images.length === 0;
@@ -184,12 +274,9 @@ function renderGallery(product) {
     $('dMainImg').src = images[i];
     $('dThumbs').querySelectorAll('button').forEach((b, k) => b.classList.toggle('active', k === i));
   };
-  const link = /^https?:\/\//.test(product.url ?? '')
-    ? `<a class="btn" href="${escapeHtml(product.url)}" target="_blank" rel="noopener">ดูสินค้าบน TikTok ↗</a>`
-    : '';
-  $('dThumbs').innerHTML = (images.length > 1
+  $('dThumbs').innerHTML = images.length > 1
     ? images.map((src) => `<button type="button"><img src="${escapeHtml(src)}" alt="" referrerpolicy="no-referrer"></button>`).join('')
-    : '') + link;
+    : '';
   $('dThumbs').querySelectorAll('button').forEach((b, i) => b.addEventListener('click', () => show(i)));
   $('dMainImg').onerror = () => { $('dGallery').hidden = true; };
   show(0);
@@ -263,6 +350,7 @@ function render() {
     </tr>`).join('');
 
   renderTrendChart(items.slice(0, 5));
+  renderLinks();
 }
 
 function renderTrendChart(top) {
@@ -296,6 +384,7 @@ function openDetail(id) {
   $('dTitle').textContent = product.image ? product.name : `${product.icon} ${product.name}`;
   $('dMeta').textContent = `${product.shop} · ${categoryName(product.category)} · ราคา ฿${fmt.format(product.price)}`;
   renderGallery(product);
+  $('dLinks').innerHTML = linkButtonsHtml(product);
   $('dBadges').innerHTML = m ? badgesHtml(m).replace('<div class="badges">', '').replace(/<\/div>$/, '') : '';
   const syncStar = () => { $('dStar').textContent = shortlist.has(id) ? '★ เก็บไว้แล้ว' : '☆ เก็บไว้'; };
   syncStar();
@@ -406,6 +495,7 @@ function exportExcel() {
     ...(has('soldTotal') ? { 'ยอดขายสะสม': p.soldTotal ?? '' } : {}),
     'เติบโต (%)': Math.round(p.growth * 10) / 10,
     'ลิงก์': p.url ?? '',
+    'ลิงก์ร้าน': p.shopUrl ?? '',
     'โน้ต': shortlist.get(p.id)?.note ?? '',
   }));
   const ws = XLSX.utils.json_to_sheet(rows);
@@ -456,6 +546,17 @@ async function init() {
   });
   $('refresh').addEventListener('click', refresh);
   $('export').addEventListener('click', exportExcel);
+  $('linkForm').addEventListener('submit', submitLink);
+  // ปุ่มคัดลอก/ลบ/เปิดลิงก์ ใช้ได้ทั้งในการ์ดลิงก์และหน้ารายละเอียด
+  document.addEventListener('click', (e) => {
+    const copy = e.target.closest('[data-copy]');
+    if (copy) { e.stopPropagation(); copyText(copy); return; }
+    if (e.target.closest('[data-stop]')) { e.stopPropagation(); return; }
+    const un = e.target.closest('[data-unlink]');
+    if (un) { e.stopPropagation(); unlink(un.dataset.unlink); return; }
+    const card = e.target.closest('.lcard.has-data');
+    if (card) openDetail(card.dataset.link);
+  }, true);
   saveShortlist();
   render();
   startPolling();

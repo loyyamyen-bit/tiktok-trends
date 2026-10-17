@@ -1,5 +1,6 @@
 // สร้าง data.json สำหรับหน้าเว็บจากข้อมูลใน store (ย่อเป็นอนุกรมรายสินค้า เก็บแค่ช่วงล่าสุด)
 import * as store from './store.js';
+import { loadLinks } from './links.js';
 
 // 30 วัน + ช่วงเทียบก่อนหน้า 30 วัน + กราฟรายสินค้า 60 วัน — 90 วันพอสำหรับทุกมุมมอง
 const KEEP_DAYS = 90;
@@ -50,6 +51,8 @@ export function buildDataset({ provider, canRefresh }) {
     },
     categories: catalog.categories,
     products: catalog.products,
+    // สินค้า/ร้านที่ผู้ใช้เพิ่มจากลิงก์ (แสดงเป็นการ์ดรูป แม้ยังไม่มียอดขาย)
+    links: loadLinks(),
     dates,
     series,
   };

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import * as store from './store.js';
 import { collectMissing, provider, TIMEZONE } from './collector.js';
 import { buildDataset } from './dataset.js';
+import { addLink, removeLink } from './links.js';
 
 const PORT = Number(process.env.PORT) || 3000;
 // ค่าเริ่มต้น: ดึงข้อมูลทุกวันเวลา 06:00 น. (เวลาไทย)
@@ -21,6 +22,20 @@ app.get('/data.json', (req, res) => {
 });
 
 app.get('/healthz', (req, res) => res.json({ ok: true }));
+
+// เพิ่มสินค้า/ร้านจากลิงก์ TikTok Shop — ข้อมูลยอดขายจะตามมาตอนเก็บข้อมูลครั้งถัดไป (ถ้าใช้ Apify)
+app.post('/api/links', express.json({ limit: '10kb' }), async (req, res) => {
+  if (typeof req.body?.url !== 'string') return res.status(400).json({ error: 'กรุณาวางลิงก์' });
+  try {
+    res.json(await addLink(req.body.url));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete('/api/links/:id', (req, res) => {
+  res.json({ removed: removeLink(req.params.id) });
+});
 
 // กันไม่ให้เก็บข้อมูลซ้อนกัน (เช่น cron ทำงานพร้อมกับกดรีเฟรช) — สำคัญเพราะ Apify คิดเงินต่อครั้ง
 let running = null;

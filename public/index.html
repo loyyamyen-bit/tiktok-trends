@@ -63,6 +63,19 @@
     </section>
     <p id="sortHelp" class="help"></p>
 
+    <section class="card" id="linksCard" hidden>
+      <div class="card-head">
+        <h2>📌 สินค้าที่ติดตามจากลิงก์ <span id="linkCount" class="muted"></span></h2>
+        <span class="muted">วางลิงก์จากปุ่มแชร์ในแอป TikTok ได้เลย</span>
+      </div>
+      <form id="linkForm" class="link-form" hidden>
+        <input id="linkInput" type="url" inputmode="url" placeholder="วางลิงก์สินค้าหรือร้าน เช่น https://vt.tiktok.com/..." autocomplete="off" required>
+        <button class="btn primary" id="linkAdd">เพิ่ม</button>
+      </form>
+      <p id="linkMsg" class="link-msg" hidden></p>
+      <div id="linkCards" class="link-cards"></div>
+    </section>
+
     <section class="card">
       <div class="card-head">
         <h2 id="chartTitle">แนวโน้มยอดขาย 5 อันดับแรก</h2>
@@ -115,6 +128,7 @@
       </div>
     </form>
     <div id="dBadges" class="badges"></div>
+    <div id="dLinks" class="link-row"></div>
     <div class="gallery" id="dGallery" hidden>
       <img id="dMainImg" class="gallery-main" alt="" referrerpolicy="no-referrer">
       <div class="gallery-thumbs" id="dThumbs"></div>
