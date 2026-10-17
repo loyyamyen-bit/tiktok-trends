@@ -140,6 +140,24 @@
     </label>
   </dialog>
 
+  <dialog id="analysis">
+    <form method="dialog" class="dialog-head">
+      <div class="an-head">
+        <span id="aImg" class="thumb"></span>
+        <div>
+          <h3 id="aTitle"></h3>
+          <p class="muted">🤖 วิเคราะห์โดย AI · ใช้ประกอบการตัดสินใจ ควรเช็กข้อเท็จจริงก่อนทำ</p>
+        </div>
+      </div>
+      <button class="btn icon" aria-label="ปิด">✕</button>
+    </form>
+    <div id="aBody"></div>
+    <div class="an-foot">
+      <span id="aMeta" class="muted"></span>
+      <button type="button" id="aRedo" class="btn sm" hidden>↻ วิเคราะห์ใหม่</button>
+    </div>
+  </dialog>
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script type="module" src="app.js"></script>

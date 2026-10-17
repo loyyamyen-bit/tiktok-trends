@@ -1,6 +1,7 @@
 // สร้าง data.json สำหรับหน้าเว็บจากข้อมูลใน store (ย่อเป็นอนุกรมรายสินค้า เก็บแค่ช่วงล่าสุด)
 import * as store from './store.js';
 import { loadLinks } from './links.js';
+import { loadAnalyses } from './analyzer.js';
 
 // 30 วัน + ช่วงเทียบก่อนหน้า 30 วัน + กราฟรายสินค้า 60 วัน — 90 วันพอสำหรับทุกมุมมอง
 const KEEP_DAYS = 90;
@@ -8,7 +9,7 @@ const KEEP_DAYS = 90;
 // ฟิลด์รายวันใน snapshot → ชื่อย่อใน data.json
 const FIELDS = { sales: 's', gmv: 'g', liveSales: 'l', videoSales: 'd', creators: 'c', videos: 'n', lives: 'k' };
 
-export function buildDataset({ provider, canRefresh }) {
+export function buildDataset({ provider, canRefresh, canAnalyze = false }) {
   const catalog = store.getCatalog() ?? { categories: [], countries: [], products: [] };
   const dates = store.dates().slice(-KEEP_DAYS);
   // แหล่งข้อมูลแต่ละแบบมีฟิลด์ไม่เท่ากัน — บอกหน้าเว็บว่ามีอะไรบ้างเพื่อซ่อนคอลัมน์ที่ไม่มีข้อมูล
@@ -36,6 +37,7 @@ export function buildDataset({ provider, canRefresh }) {
   return {
     provider,
     canRefresh,
+    canAnalyze,
     lastUpdated: store.lastUpdated(),
     growthMinSalesPerDay: Number(process.env.GROWTH_MIN_SALES_PER_DAY) || 5,
     // ค่าคอมที่ใช้ประมาณเมื่อแหล่งข้อมูลไม่มี % ค่าคอมของสินค้านั้น (0.10 = 10%)
@@ -53,6 +55,8 @@ export function buildDataset({ provider, canRefresh }) {
     products: catalog.products,
     // สินค้า/ร้านที่ผู้ใช้เพิ่มจากลิงก์ (แสดงเป็นการ์ดรูป แม้ยังไม่มียอดขาย)
     links: loadLinks(),
+    // ผลวิเคราะห์ AI ที่เคยทำไว้ { [productId]: { result, analyzedAt, ... } }
+    analyses: loadAnalyses(),
     dates,
     series,
   };

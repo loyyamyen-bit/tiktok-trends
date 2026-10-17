@@ -203,6 +203,85 @@ async function copyText(btn) {
   }
 }
 
+// ---------- วิเคราะห์ด้วย AI ----------
+const FORMAT_LABEL = { live: '🔴 เหมาะกับไลฟ์มากกว่า', video: '🎬 เหมาะกับคลิปมากกว่า', both: '✨ ทำได้ทั้งไลฟ์และคลิป' };
+
+function analysisOf(id) {
+  return state.data.analyses?.[id] ?? null;
+}
+
+// ปุ่มวิเคราะห์ — ถ้ามีผลแล้วเปิดดูได้เสมอ ถ้ายังไม่มีต้องรันในเครื่องที่ตั้ง API key ไว้
+function analyzeButtonHtml(id, small = false) {
+  const has = analysisOf(id);
+  if (!has && !state.data.canAnalyze) return '';
+  return `<button type="button" class="btn ai${small ? ' sm' : ''}" data-analyze="${escapeHtml(id)}">${has ? '🤖 ดูผลวิเคราะห์' : '🤖 วิเคราะห์ด้วย AI'}</button>`;
+}
+
+function miniScoresHtml(id) {
+  const a = analysisOf(id)?.result;
+  return a ? `<div class="an-mini">🔴 ไลฟ์ <b>${a.live.score}</b>/10 · 🎬 คลิป <b>${a.video.score}</b>/10</div>` : '';
+}
+
+function listHtml(items, ordered = false) {
+  if (!items?.length) return '<p class="muted">–</p>';
+  const tag = ordered ? 'ol' : 'ul';
+  return `<${tag}>${items.map((x) => `<li>${escapeHtml(x)}</li>`).join('')}</${tag}>`;
+}
+
+function findItem(id) {
+  return state.data.products.find((p) => p.id === id) ?? state.data.links?.find((l) => l.id === id);
+}
+
+function showAnalysis(id) {
+  const rec = analysisOf(id);
+  const item = findItem(id);
+  const a = rec.result;
+  $('aTitle').textContent = item?.name ?? id;
+  $('aImg').innerHTML = item?.image ? `<img src="${escapeHtml(item.image)}" alt="" referrerpolicy="no-referrer">` : (item?.icon ?? '🛍️');
+  const score = (key, label) => `<div class="an-score ${a.bestFormat === key || a.bestFormat === 'both' ? 'best' : ''}">
+      <div class="top"><span>${label}</span><span class="num">${a[key].score}<span class="muted">/10</span></span></div>
+      <div class="bar"><span style="width:${a[key].score * 10}%"></span></div>
+      <p>${escapeHtml(a[key].reason)}</p>
+    </div>`;
+  $('aBody').innerHTML = `
+    <div class="an-summary"><b>${FORMAT_LABEL[a.bestFormat] ?? ''}</b><br>${escapeHtml(a.summary)}</div>
+    <div class="an-scores">${score('live', '🔴 ไลฟ์')}${score('video', '🎬 คลิปสั้น')}</div>
+    <div class="an-grid">
+      <div class="an-sec"><h4>🎯 กลุ่มเป้าหมาย</h4>${listHtml(a.targetAudience)}</div>
+      <div class="an-sec"><h4>💪 จุดขาย</h4>${listHtml(a.sellingPoints)}</div>
+      <div class="an-sec full"><h4>🪝 Hook 3 วินาทีแรก</h4>${listHtml(a.hooks, true)}</div>
+      <div class="an-sec"><h4>💡 ไอเดียคอนเทนต์</h4>${listHtml(a.contentIdeas)}</div>
+      <div class="an-sec"><h4>🎙️ โครงไลฟ์</h4>${listHtml(a.liveOutline, true)}</div>
+      <div class="an-sec warn full"><h4>⚠️ ข้อควรระวัง</h4>${listHtml(a.cautions)}</div>
+      <div class="an-sec"><h4>✅ เช็กก่อนรับงาน</h4>${listHtml(a.checklist)}</div>
+      <div class="an-sec"><h4>📊 ความเห็นต่อตัวเลข</h4><p>${escapeHtml(a.dataNote)}</p></div>
+    </div>`;
+  const when = new Date(rec.analyzedAt).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
+  $('aMeta').textContent = `วิเคราะห์เมื่อ ${when}${rec.withSalesData ? ' · ใช้ข้อมูลยอดขายประกอบ' : ' · ยังไม่มีข้อมูลยอดขาย'}${rec.costUsd != null ? ` · ค่าใช้จ่าย ~$${rec.costUsd}` : ''}`;
+  $('aRedo').hidden = !state.data.canAnalyze;
+  $('aRedo').onclick = () => runAnalysis(id, $('aRedo'), true);
+  if (!$('analysis').open) $('analysis').showModal();
+}
+
+async function runAnalysis(id, btn, force = false) {
+  if (!force && analysisOf(id)) return showAnalysis(id);
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ กำลังวิเคราะห์… (~30 วินาที)';
+  try {
+    const rec = await api(`api/analyze/${encodeURIComponent(id)}${force ? '?force=1' : ''}`, { method: 'POST' });
+    state.data.analyses = { ...state.data.analyses, [id]: rec };
+    render();
+    showAnalysis(id);
+    btn.textContent = '🤖 ดูผลวิเคราะห์';
+  } catch (err) {
+    alert(`วิเคราะห์ไม่สำเร็จ: ${err.message}`);
+    btn.textContent = label;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 // การ์ดสินค้า/ร้านที่เพิ่มจากลิงก์ — ถ้าสินค้านั้นมีข้อมูลยอดขายแล้ว แสดงตัวเลขและกดดูรายละเอียดได้
 function renderLinks() {
   const links = state.data.links ?? [];
@@ -224,8 +303,10 @@ function renderLinks() {
         <div class="lcard-body">
           <div class="lcard-name" title="${escapeHtml(l.name)}">${escapeHtml(l.name)}</div>
           ${stats}
+          ${miniScoresHtml(l.id)}
         </div>
         <div class="lcard-actions">
+          ${l.type === 'product' ? analyzeButtonHtml(l.id, true) : ''}
           ${linkButtonsHtml({ url: l.url, shopUrl: m?.shopUrl }, true)}
           ${canEdit ? `<button type="button" class="btn sm" data-unlink="${escapeHtml(l.id)}" aria-label="ลบ">✕</button>` : ''}
         </div>
@@ -384,7 +465,7 @@ function openDetail(id) {
   $('dTitle').textContent = product.image ? product.name : `${product.icon} ${product.name}`;
   $('dMeta').textContent = `${product.shop} · ${categoryName(product.category)} · ราคา ฿${fmt.format(product.price)}`;
   renderGallery(product);
-  $('dLinks').innerHTML = linkButtonsHtml(product);
+  $('dLinks').innerHTML = analyzeButtonHtml(id) + linkButtonsHtml(product);
   $('dBadges').innerHTML = m ? badgesHtml(m).replace('<div class="badges">', '').replace(/<\/div>$/, '') : '';
   const syncStar = () => { $('dStar').textContent = shortlist.has(id) ? '★ เก็บไว้แล้ว' : '☆ เก็บไว้'; };
   syncStar();
@@ -496,6 +577,10 @@ function exportExcel() {
     'เติบโต (%)': Math.round(p.growth * 10) / 10,
     'ลิงก์': p.url ?? '',
     'ลิงก์ร้าน': p.shopUrl ?? '',
+    'AI: เหมาะกับ': analysisOf(p.id) ? FORMAT_LABEL[analysisOf(p.id).result.bestFormat].replace(/^\S+ /, '') : '',
+    'AI: คะแนนไลฟ์': analysisOf(p.id)?.result.live.score ?? '',
+    'AI: คะแนนคลิป': analysisOf(p.id)?.result.video.score ?? '',
+    'AI: สรุป': analysisOf(p.id)?.result.summary ?? '',
     'โน้ต': shortlist.get(p.id)?.note ?? '',
   }));
   const ws = XLSX.utils.json_to_sheet(rows);
@@ -552,6 +637,8 @@ async function init() {
     const copy = e.target.closest('[data-copy]');
     if (copy) { e.stopPropagation(); copyText(copy); return; }
     if (e.target.closest('[data-stop]')) { e.stopPropagation(); return; }
+    const an = e.target.closest('[data-analyze]');
+    if (an) { e.stopPropagation(); runAnalysis(an.dataset.analyze, an); return; }
     const un = e.target.closest('[data-unlink]');
     if (un) { e.stopPropagation(); unlink(un.dataset.unlink); return; }
     const card = e.target.closest('.lcard.has-data');

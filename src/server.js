@@ -7,7 +7,10 @@ import { fileURLToPath } from 'node:url';
 import * as store from './store.js';
 import { collectMissing, provider, TIMEZONE } from './collector.js';
 import { buildDataset } from './dataset.js';
-import { addLink, removeLink } from './links.js';
+import Anthropic from '@anthropic-ai/sdk';
+import { addLink, loadLinks, removeLink } from './links.js';
+import { analyzeProduct, loadAnalyses } from './analyzer.js';
+import { ranking } from '../public/lib/analytics.js';
 
 const PORT = Number(process.env.PORT) || 3000;
 // ค่าเริ่มต้น: ดึงข้อมูลทุกวันเวลา 06:00 น. (เวลาไทย)
@@ -17,8 +20,10 @@ const REFRESH_COOLDOWN_MS = (Number(process.env.REFRESH_COOLDOWN_MINUTES) || 10)
 
 const app = express();
 
+const hasAnthropicKey = () => Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
+
 app.get('/data.json', (req, res) => {
-  res.json(buildDataset({ provider: provider.name, canRefresh: true }));
+  res.json(buildDataset({ provider: provider.name, canRefresh: true, canAnalyze: hasAnthropicKey() }));
 });
 
 app.get('/healthz', (req, res) => res.json({ ok: true }));
@@ -35,6 +40,31 @@ app.post('/api/links', express.json({ limit: '10kb' }), async (req, res) => {
 
 app.delete('/api/links/:id', (req, res) => {
   res.json({ removed: removeLink(req.params.id) });
+});
+
+// วิเคราะห์สินค้าด้วย AI — มีค่าใช้จ่ายต่อครั้ง จึงคืนผลเดิมถ้าเคยวิเคราะห์แล้ว (ส่ง ?force=1 เพื่อวิเคราะห์ใหม่)
+const analyzing = new Map();
+app.post('/api/analyze/:id', async (req, res) => {
+  const { id } = req.params;
+  if (!hasAnthropicKey()) return res.status(400).json({ error: 'ยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY ในไฟล์ .env' });
+  const cached = loadAnalyses()[id];
+  if (cached && req.query.force !== '1') return res.json(cached);
+
+  const dataset = buildDataset({ provider: provider.name, canRefresh: true });
+  const metrics = ranking(dataset, { days: 7, limit: 100000 }).find((r) => r.id === id);
+  const product = metrics ?? loadLinks().find((l) => l.id === id);
+  if (!product) return res.status(404).json({ error: 'ไม่พบสินค้า' });
+
+  try {
+    if (!analyzing.has(id)) analyzing.set(id, analyzeProduct(product, metrics).finally(() => analyzing.delete(id)));
+    res.json(await analyzing.get(id));
+  } catch (err) {
+    console.error('[analyze]', err);
+    if (err instanceof Anthropic.AuthenticationError) return res.status(400).json({ error: 'ANTHROPIC_API_KEY ไม่ถูกต้อง' });
+    if (err instanceof Anthropic.RateLimitError) return res.status(429).json({ error: 'เรียก AI ถี่เกินไป ลองใหม่อีกสักครู่' });
+    if (err instanceof Anthropic.APIError) return res.status(502).json({ error: `AI ขัดข้อง (${err.status ?? 'เชื่อมต่อไม่ได้'})` });
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // กันไม่ให้เก็บข้อมูลซ้อนกัน (เช่น cron ทำงานพร้อมกับกดรีเฟรช) — สำคัญเพราะ Apify คิดเงินต่อครั้ง
