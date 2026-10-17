@@ -1,0 +1,63 @@
+# ดึงข้อมูลทุกวันแล้ว deploy หน้าเว็บขึ้น GitHub Pages
+name: Update data & deploy
+
+on:
+  schedule:
+    - cron: '0 23 * * *' # 23:00 UTC = 06:00 น. เวลาไทย
+  workflow_dispatch: # กดรันเองได้ที่แท็บ Actions
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    env:
+      # ตั้งค่าได้ที่ Settings → Secrets and variables → Actions
+      DATA_PROVIDER: ${{ vars.DATA_PROVIDER || 'mock' }}
+      APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Collect data
+        run: npm run collect
+
+      - name: Commit data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data
+          if git diff --cached --quiet; then
+            echo "ไม่มีข้อมูลใหม่"
+          else
+            git commit -m "data: $(TZ=Asia/Bangkok date +%F)"
+            git push
+          fi
+
+      - name: Build site
+        run: npm run build
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+      - id: deploy
+        uses: actions/deploy-pages@v4

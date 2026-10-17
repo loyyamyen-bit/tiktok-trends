@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TikTok Trends</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">♪</span>
+      <div>
+        <h1>TikTok Trends</h1>
+        <p class="sub">สินค้าขายดีและสินค้าเป็นกระแสบน TikTok Shop</p>
+      </div>
+    </div>
+    <div class="status">
+      <span class="badge" id="providerBadge" hidden></span>
+      <span id="updated" class="muted"></span>
+      <button id="refresh" class="btn" hidden>รีเฟรช</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="filters">
+      <div class="seg" id="sort">
+        <button data-value="sales" class="active">🔥 ขายดี</button>
+        <button data-value="growth">🚀 มาแรง</button>
+      </div>
+      <div class="seg" id="days">
+        <button data-value="1">1 วัน</button>
+        <button data-value="7" class="active">7 วัน</button>
+        <button data-value="30">30 วัน</button>
+      </div>
+      <label class="field">ประเทศ
+        <select id="country"><option value="">ทุกประเทศ</option></select>
+      </label>
+      <label class="field">หมวดหมู่
+        <select id="category"><option value="">ทุกหมวด</option></select>
+      </label>
+      <label class="field search">ค้นหา
+        <input id="search" type="search" placeholder="ชื่อสินค้าหรือร้าน" autocomplete="off">
+      </label>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>แนวโน้มยอดขาย 5 อันดับแรก</h2>
+        <span class="muted">ยอดขายรายวัน 30 วันล่าสุด (ชิ้น)</span>
+      </div>
+      <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2 id="tableTitle">อันดับสินค้า</h2>
+        <div class="head-actions">
+          <span class="muted">กดที่สินค้าเพื่อดูรายละเอียด</span>
+          <button id="export" class="btn">⬇ ส่งออก Excel</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="num">#</th>
+              <th>สินค้า</th>
+              <th class="num">ยอดขาย (ชิ้น)</th>
+              <th class="num hide-sm">ยอดขาย (บาท)</th>
+              <th class="num hide-sm col-total" hidden>ยอดขายสะสม</th>
+              <th class="num">เติบโต</th>
+              <th class="hide-sm">14 วัน</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+      <p id="empty" class="muted empty" hidden>ไม่พบสินค้าตามตัวกรองนี้</p>
+      <p id="notice" class="notice" hidden></p>
+    </section>
+  </main>
+
+  <dialog id="detail">
+    <form method="dialog" class="dialog-head">
+      <div>
+        <h3 id="dTitle"></h3>
+        <p id="dMeta" class="muted"></p>
+      </div>
+      <button class="btn icon" aria-label="ปิด">✕</button>
+    </form>
+    <div class="kpis" id="dKpis"></div>
+    <div class="chart-wrap"><canvas id="detailChart"></canvas></div>
+  </dialog>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

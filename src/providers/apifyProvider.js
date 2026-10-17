@@ -1,0 +1,149 @@
+// ผู้ให้ข้อมูลจริงผ่าน Apify — รัน actor ค้นหาสินค้า TikTok Shop ตามคีย์เวิร์ดใน config/apify.json
+//
+// actor ส่วนใหญ่ให้ "ยอดขายสะสม" (sold_count) ไม่ใช่ยอดรายวัน provider นี้จึงคืน soldTotal
+// แล้วให้ collector คำนวณยอดรายวันจากผลต่างของแต่ละวัน
+//
+// ต้องตั้งค่า APIFY_TOKEN (ดูได้ที่ https://console.apify.com/settings/integrations)
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { CATEGORIES, COUNTRIES } from './mockProvider.js';
+
+const CONFIG_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'config', 'apify.json');
+const API_BASE = process.env.APIFY_BASE_URL || 'https://api.apify.com/v2';
+const POLL_MS = Number(process.env.APIFY_POLL_MS) || 5000;
+const RUN_TIMEOUT_MS = 15 * 60 * 1000;
+
+function loadConfig() {
+  return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+}
+
+// แปลงข้อความยอดขาย เช่น "1.2K", "10K+", "1,234", "ขายแล้ว 1.2พัน" ให้เป็นตัวเลข
+export function parseCount(value) {
+  if (value == null || value === '') return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  const s = String(value).replace(/,/g, '').toLowerCase();
+  const m = s.match(/(\d+(?:\.\d+)?)\s*(k|m|พัน|หมื่น|แสน|ล้าน)?/);
+  if (!m) return null;
+  const mult = { k: 1e3, m: 1e6, 'พัน': 1e3, 'หมื่น': 1e4, 'แสน': 1e5, 'ล้าน': 1e6 }[m[2]] ?? 1;
+  return Math.round(Number(m[1]) * mult);
+}
+
+function parsePrice(value) {
+  if (value == null) return null;
+  if (typeof value === 'number') return value;
+  const m = String(value).replace(/,/g, '').match(/\d+(?:\.\d+)?/);
+  return m ? Number(m[0]) : null;
+}
+
+// รองรับชื่อฟิลด์จากหลาย actor
+export function normalizeItem(item, country, category) {
+  const rawId = item.product_id ?? item.productId ?? item.id;
+  const soldTotal = parseCount(item.sold_count ?? item.soldCount ?? item.sold ?? item.sales);
+  if (rawId == null || soldTotal == null) return null;
+  const images = item.image_urls ?? item.imageUrls ?? item.images;
+  return {
+    id: `${country}-${rawId}`,
+    name: item.title ?? item.name ?? item.product_name ?? String(rawId),
+    category,
+    country,
+    price: parsePrice(item.price ?? item.price_min ?? item.sale_price) ?? 0,
+    shop: item.shop_name ?? item.seller_name ?? item.shopName ?? '',
+    icon: CATEGORIES.find((c) => c.id === category)?.icon ?? '🛍️',
+    image: (Array.isArray(images) ? images[0] : images) ?? item.image ?? item.cover ?? null,
+    url: item.product_url ?? item.url ?? null,
+    soldTotal,
+  };
+}
+
+// input ของ actor แต่ละตัวต่างกัน — เพิ่มตัวใหม่ได้ที่นี่
+function buildInput(actorId, country, keywords, maxItems) {
+  if (actorId.startsWith('bovi/')) {
+    return {
+      keywords,
+      maxResults: maxItems,
+      proxyConfiguration: { useApifyProxy: true, apifyProxyGroups: ['RESIDENTIAL'], countryCode: country },
+    };
+  }
+  return { mode: 'search', region: country.toLowerCase(), search_keywords: keywords, max_items: maxItems };
+}
+
+async function apify(pathname, token, options = {}) {
+  const res = await fetch(`${API_BASE}${pathname}`, {
+    ...options,
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...options.headers },
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Apify ${res.status}: ${body.slice(0, 300)}`);
+  }
+  return res.json();
+}
+
+async function runActor(actorId, input, token) {
+  const actorPath = encodeURIComponent(actorId.replace('/', '~'));
+  const { data: run } = await apify(`/acts/${actorPath}/runs`, token, { method: 'POST', body: JSON.stringify(input) });
+  const started = Date.now();
+  let status = run.status;
+  while (!['SUCCEEDED', 'FAILED', 'ABORTED', 'TIMED-OUT'].includes(status)) {
+    if (Date.now() - started > RUN_TIMEOUT_MS) throw new Error(`Apify run ${run.id} ใช้เวลานานเกินไป`);
+    await new Promise((r) => setTimeout(r, POLL_MS));
+    status = (await apify(`/actor-runs/${run.id}`, token)).data.status;
+  }
+  if (status !== 'SUCCEEDED') throw new Error(`Apify run ${run.id} จบด้วยสถานะ ${status}`);
+  return apify(`/datasets/${run.defaultDatasetId}/items?clean=true&format=json`, token);
+}
+
+// รันงานพร้อมกันไม่เกิน limit งาน
+async function mapLimit(items, limit, fn) {
+  const results = [];
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i]);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+export const apifyProvider = {
+  name: 'apify',
+  supportsBackfill: false,
+
+  async getCatalog() {
+    const codes = Object.keys(loadConfig().keywords);
+    return { categories: CATEGORIES, countries: COUNTRIES.filter((c) => codes.includes(c.code)), products: [] };
+  },
+
+  async fetchSnapshot() {
+    const token = process.env.APIFY_TOKEN;
+    if (!token) throw new Error('ยังไม่ได้ตั้งค่า APIFY_TOKEN (ใส่ในไฟล์ .env)');
+    const config = loadConfig();
+
+    // รัน actor หนึ่งครั้งต่อ (ประเทศ, หมวด) เพื่อให้รู้ว่าสินค้าแต่ละชิ้นอยู่หมวดไหน
+    const jobs = Object.entries(config.keywords).flatMap(([country, byCategory]) =>
+      Object.entries(byCategory).map(([category, keywords]) => ({ country, category, keywords })),
+    );
+    const results = await mapLimit(jobs, config.concurrency ?? 2, async (job) => {
+      const input = buildInput(config.actorId, job.country, job.keywords, config.maxItemsPerKeyword * job.keywords.length);
+      try {
+        const items = await runActor(config.actorId, input, token);
+        console.log(`[apify] ${job.country}/${job.category}: ได้ ${items.length} รายการ`);
+        return items.map((it) => normalizeItem(it, job.country, job.category)).filter(Boolean);
+      } catch (err) {
+        console.error(`[apify] ${job.country}/${job.category} ล้มเหลว:`, err.message);
+        return [];
+      }
+    });
+
+    const byId = new Map();
+    for (const p of results.flat()) if (!byId.has(p.id)) byId.set(p.id, p);
+    if (!byId.size) throw new Error('Apify ไม่คืนข้อมูลสินค้าเลย (ตรวจ token, เครดิต หรือ actor)');
+
+    const products = [...byId.values()].map(({ soldTotal, ...p }) => p);
+    const rows = [...byId.values()].map((p) => ({ productId: p.id, soldTotal: p.soldTotal }));
+    return { products, rows };
+  },
+};

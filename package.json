@@ -1,0 +1,21 @@
+{
+  "name": "tiktok-trends",
+  "version": "0.1.0",
+  "private": true,
+  "description": "เว็บติดตามสินค้าขายดีและสินค้าเป็นกระแสบน TikTok",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/server.js",
+    "dev": "node --env-file-if-exists=.env --watch src/server.js",
+    "collect": "node --env-file-if-exists=.env src/collect-once.js",
+    "build": "node --env-file-if-exists=.env src/build.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "express": "^4.22.3",
+    "node-cron": "^3.0.3"
+  }
+}
