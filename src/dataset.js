@@ -37,12 +37,15 @@ export function buildDataset({ provider, canRefresh }) {
     canRefresh,
     lastUpdated: store.lastUpdated(),
     growthMinSalesPerDay: Number(process.env.GROWTH_MIN_SALES_PER_DAY) || 5,
+    // ค่าคอมที่ใช้ประมาณเมื่อแหล่งข้อมูลไม่มี % ค่าคอมของสินค้านั้น (0.10 = 10%)
+    defaultCommissionRate: Number(process.env.DEFAULT_COMMISSION_RATE ?? 0.1) || null,
     has: {
       channels: seen.has('liveSales') && seen.has('videoSales'),
       creators: seen.has('creators'),
       videos: seen.has('videos'),
       lives: seen.has('lives'),
-      commission: catalog.products.some((p) => p.commissionRate != null),
+      commission: catalog.products.some((p) => p.commissionRate != null) || Boolean(Number(process.env.DEFAULT_COMMISSION_RATE ?? 0.1)),
+      realCommission: catalog.products.some((p) => p.commissionRate != null),
       soldTotal: Object.values(series).some((sr) => sr.t != null),
     },
     categories: catalog.categories,

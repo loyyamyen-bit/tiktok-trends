@@ -1,6 +1,6 @@
 import { ranking, history } from './lib/analytics.js';
 
-const state = { sort: 'sales', channel: 'all', days: 7, category: '', minCommission: 0, q: '', data: null };
+const state = { sort: 'sales', channel: 'all', days: 7, category: '', minCommission: 0, q: '', onlyStarred: false, data: null };
 const LINE_COLORS = ['#fe2c55', '#25c2c9', '#f59e0b', '#8b5cf6', '#10b981'];
 const POLL_MS = 5 * 60 * 1000;
 
@@ -11,6 +11,43 @@ const SORT_LABEL = {
   opportunity: ['คู่แข่งน้อย', 'เรียงตามยอดขายต่อครีเอเตอร์ 1 คน ยิ่งสูงยิ่งดี แปลว่าขายดีแต่คนโปรโมทยังน้อย'],
 };
 const CHANNEL_LABEL = { all: '', live: ' · Live', video: ' · วิดีโอ' };
+const STAGE = {
+  rising: ['🌱 เพิ่งเริ่มขึ้น', 'ยอดเพิ่งโตจากระดับปกติ เข้าตอนนี้ได้เปรียบ'],
+  peak: ['🔥 กำลังพีค', 'ยอดสูงกว่าปกติมาก คนเริ่มแห่เข้ามา'],
+  falling: ['📉 เริ่มขาลง', 'ยอดลดลงจากสัปดาห์ก่อน ควรระวัง'],
+  steady: ['💤 ทรงตัว', 'ขายได้สม่ำเสมอ ไม่หวือหวา'],
+};
+const TAG = {
+  hot: ['⚡ กำลังพุ่ง', 'ยอดขายโต 50% ขึ้นไป'],
+  highCommission: ['💎 ค่าคอมสูง', 'ค่าคอม 20% ขึ้นไป'],
+  lowCompetition: ['🎯 คู่แข่งน้อย', 'ยอดขายต่อครีเอเตอร์อยู่ใน 20% บนสุด'],
+  live: ['🔴 เหมาะกับ Live', 'ยอดขายครึ่งหนึ่งขึ้นไปมาจาก Live'],
+  video: ['🎬 เหมาะกับวิดีโอ', 'ยอดขายเกินครึ่งมาจากวิดีโอ'],
+};
+
+// รายการที่เก็บไว้ + โน้ต เก็บในเบราว์เซอร์นี้ (ไม่ส่งขึ้นเซิร์ฟเวอร์)
+const SHORTLIST_KEY = 'tiktok-affiliate-shortlist';
+const shortlist = loadShortlist();
+function loadShortlist() {
+  try {
+    return new Map(Object.entries(JSON.parse(localStorage.getItem(SHORTLIST_KEY)) ?? {}));
+  } catch {
+    return new Map();
+  }
+}
+function saveShortlist() {
+  try {
+    localStorage.setItem(SHORTLIST_KEY, JSON.stringify(Object.fromEntries(shortlist)));
+  } catch {
+    // โหมดส่วนตัวหรือบล็อก storage — ใช้ได้จนกว่าจะปิดหน้า
+  }
+  $('starCount').textContent = shortlist.size;
+}
+function toggleStar(id) {
+  if (shortlist.has(id)) shortlist.delete(id);
+  else shortlist.set(id, { note: '', addedAt: new Date().toISOString() });
+  saveShortlist();
+}
 
 const $ = (id) => document.getElementById(id);
 const fmt = new Intl.NumberFormat('th-TH');
@@ -69,6 +106,29 @@ function sparkline(values) {
   });
   const color = values[values.length - 1] >= values[0] ? cssVar('--up') : cssVar('--down');
   return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><polyline fill="none" stroke="${color}" stroke-width="1.75" stroke-linejoin="round" points="${pts.join(' ')}"/></svg>`;
+}
+
+function badgesHtml(p) {
+  const out = [];
+  if (p.stage) out.push(`<span class="badge-sm stage-${p.stage}" title="${STAGE[p.stage][1]}">${STAGE[p.stage][0]}</span>`);
+  for (const t of p.tags ?? []) out.push(`<span class="badge-sm" title="${TAG[t][1]}">${TAG[t][0]}</span>`);
+  return out.length ? `<div class="badges">${out.join('')}</div>` : '';
+}
+
+function money(x) {
+  return x >= 10000 ? fmtCompact.format(x) : fmt.format(Math.round(x));
+}
+
+function commissionHtml(p) {
+  if (p.rate == null) return '–';
+  const rate = p.commissionEstimated
+    ? `<span class="com-rate" title="แหล่งข้อมูลไม่มี % ค่าคอม ใช้ค่าเริ่มต้นแทน">~${pct(p.rate)}</span> <span class="est">ประมาณ</span>`
+    : `<span class="com-rate">${pct(p.rate)}</span>`;
+  const earn = [
+    p.earnPerVideo != null ? `คลิป ~฿${money(p.earnPerVideo)}` : '',
+    p.earnPerLive != null ? `ไลฟ์ ~฿${money(p.earnPerLive)}` : '',
+  ].filter(Boolean).join(' · ');
+  return `${rate}<span class="sub-val">฿${fmt.format(Math.round(p.commissionPerUnit))}/ชิ้น</span>${earn ? `<span class="sub-val">${earn}</span>` : ''}`;
 }
 
 function channelHtml(p) {
@@ -157,7 +217,7 @@ function fillSelects() {
 
 function currentFilters(limit) {
   const { category, minCommission, q, days, sort, channel } = state;
-  return { category, minCommission, q, days, sort, channel, limit };
+  return { category, minCommission, q, days, sort, channel, limit, only: state.onlyStarred ? new Set(shortlist.keys()) : null };
 }
 
 function render() {
@@ -167,15 +227,21 @@ function render() {
   $('tableTitle').textContent = `${label}${ch} · ${state.days} วันล่าสุด`;
   $('chartTitle').textContent = `แนวโน้มยอดขาย${ch} 5 อันดับแรก`;
   $('salesHead').textContent = state.channel === 'live' ? 'ยอดขาย Live' : state.channel === 'video' ? 'ยอดขายวิดีโอ' : 'ยอดขาย';
-  $('sortHelp').textContent = help;
+  $('sortHelp').textContent = has('realCommission')
+    ? help
+    : `${help} · ค่าคอมที่แสดงเป็นค่าประมาณ ${pct(state.data.defaultCommissionRate)} เพราะแหล่งข้อมูลไม่มี % ค่าคอมจริง`;
 
   $('empty').hidden = items.length > 0;
+  $('empty').textContent = state.onlyStarred && !shortlist.size
+    ? 'ยังไม่มีสินค้าที่เก็บไว้ กด ☆ หน้าสินค้าเพื่อเก็บ'
+    : 'ไม่พบสินค้าตามตัวกรองนี้';
   const noDaily = has('soldTotal') && items.length > 0 && items.every((p) => p.sales === 0);
   $('notice').hidden = !noDaily;
   $('notice').textContent = 'ตอนนี้มีข้อมูลแค่วันเดียว ยอดขายรายวันคำนวณจากยอดสะสมที่เพิ่มขึ้น จึงจะเริ่มแสดงหลังเก็บข้อมูลครั้งถัดไป ระหว่างนี้ตารางเรียงตามยอดขายสะสมแทน';
 
   $('rows').innerHTML = items.map((p) => `
     <tr data-id="${escapeHtml(p.id)}">
+      <td class="star-col"><button class="star ${shortlist.has(p.id) ? 'on' : ''}" data-star="${escapeHtml(p.id)}" aria-label="เก็บไว้">${shortlist.has(p.id) ? '★' : '☆'}</button></td>
       <td class="num"><span class="rank">${p.rank}</span>${rankMoveHtml(p.rank, p.prevRank)}</td>
       <td>
         <div class="product">
@@ -183,13 +249,12 @@ function render() {
           <div>
             <div class="pname">${nameHtml(p)}</div>
             <div class="pmeta">${escapeHtml(p.shop)} · ${categoryName(p.category)} · ฿${fmt.format(p.price)}</div>
+            ${badgesHtml(p)}
           </div>
         </div>
       </td>
       <td class="num">${fmt.format(p.sales)} ชิ้น<span class="sub-val">฿${fmtCompact.format(p.gmv)}</span></td>
-      ${has('commission') ? `<td class="num">${p.commissionRate != null
-        ? `<span class="com-rate">${pct(p.commissionRate)}</span><span class="sub-val">฿${fmt.format(Math.round(p.commissionPerUnit))}/ชิ้น</span>`
-        : '–'}</td>` : ''}
+      ${has('commission') ? `<td class="num">${commissionHtml(p)}</td>` : ''}
       ${has('channels') ? `<td class="hide-sm">${channelHtml(p)}</td>` : ''}
       ${has('creators') ? `<td class="num hide-sm">${fmt.format(p.creators)} คน<span class="sub-val">${p.salesPerCreator != null ? `${fmt.format(Math.round(p.salesPerCreator))} ชิ้น/คน` : ''}</span></td>` : ''}
       ${has('soldTotal') ? `<td class="num hide-sm">${p.soldTotal == null ? '–' : fmt.format(p.soldTotal)}</td>` : ''}
@@ -220,20 +285,29 @@ function renderTrendChart(top) {
 
 function openDetail(id) {
   const product = state.data.products.find((p) => p.id === id);
+  // ตัวชี้วัดของสินค้านี้ (7 วัน ทุกช่องทาง) สำหรับป้ายและรายได้ต่อคลิป/ไลฟ์
+  const m = ranking(state.data, { days: 7, limit: 1000 }).find((r) => r.id === id);
   const hist = history(state.data, id, 60);
   const last7 = hist.slice(-7);
   const sum = (arr, k) => arr.reduce((s, h) => s + h[k], 0);
   const sales7 = sum(last7, 'sales');
-  const rate = product.commissionRate;
+  const rate = m?.rate ?? null;
 
   $('dTitle').textContent = product.image ? product.name : `${product.icon} ${product.name}`;
   $('dMeta').textContent = `${product.shop} · ${categoryName(product.category)} · ราคา ฿${fmt.format(product.price)}`;
   renderGallery(product);
+  $('dBadges').innerHTML = m ? badgesHtml(m).replace('<div class="badges">', '').replace(/<\/div>$/, '') : '';
+  const syncStar = () => { $('dStar').textContent = shortlist.has(id) ? '★ เก็บไว้แล้ว' : '☆ เก็บไว้'; };
+  syncStar();
+  $('dStar').onclick = () => { toggleStar(id); syncStar(); renderNote(id); render(); };
+  renderNote(id);
 
   const kpis = [['ยอดขาย 7 วัน', `${fmt.format(sales7)} ชิ้น`]];
   if (rate != null) {
-    kpis.push(['ค่าคอม', `${pct(rate)} · ฿${fmt.format(Math.round(product.price * rate))}/ชิ้น`]);
+    kpis.push([m.commissionEstimated ? 'ค่าคอม (ประมาณ)' : 'ค่าคอม', `${m.commissionEstimated ? '~' : ''}${pct(rate)} · ฿${fmt.format(Math.round(product.price * rate))}/ชิ้น`]);
     kpis.push(['ค่าคอมรวม 7 วัน', `฿${fmtCompact.format(sum(last7, 'gmv') * rate)}`]);
+    if (m.earnPerVideo != null) kpis.push(['ได้เฉลี่ยต่อคลิป', `~฿${money(m.earnPerVideo)}`]);
+    if (m.earnPerLive != null) kpis.push(['ได้เฉลี่ยต่อไลฟ์', `~฿${money(m.earnPerLive)}`]);
   }
   if (has('channels') && sales7) {
     kpis.push(['ขายผ่าน Live', pct(sum(last7, 'liveSales') / sales7)]);
@@ -268,6 +342,17 @@ function openDetail(id) {
   detailChart = new Chart($('detailChart'), { data: { labels, datasets }, options });
 }
 
+function renderNote(id) {
+  const starred = shortlist.has(id);
+  $('dNoteWrap').hidden = !starred;
+  if (!starred) return;
+  $('dNote').value = shortlist.get(id).note ?? '';
+  $('dNote').oninput = (e) => {
+    shortlist.get(id).note = e.target.value;
+    saveShortlist();
+  };
+}
+
 function bindSeg(id, key) {
   $(id).addEventListener('click', (e) => {
     const btn = e.target.closest('button');
@@ -297,16 +382,22 @@ function exportExcel() {
   const d = state.days;
   const rows = items.map((p) => ({
     'อันดับ': p.rank,
+    'เก็บไว้': shortlist.has(p.id) ? '⭐' : '',
     'สินค้า': p.name,
     'ร้าน': p.shop,
     'หมวดหมู่': categoryName(p.category),
     'ราคา (บาท)': p.price,
     [`ยอดขาย ${d} วัน (ชิ้น)`]: p.sales,
     [`ยอดขาย ${d} วัน (บาท)`]: p.gmv,
+    'ช่วงกระแส': p.stage ? STAGE[p.stage][0].replace(/^\S+ /, '') : '',
+    'จุดเด่น': p.tags.map((t) => TAG[t][0].replace(/^\S+ /, '')).join(', '),
     ...(has('commission') ? {
-      'ค่าคอม (%)': p.commissionRate != null ? Math.round(p.commissionRate * 1000) / 10 : '',
+      'ค่าคอม (%)': p.rate != null ? Math.round(p.rate * 1000) / 10 : '',
+      'ค่าคอมเป็นค่าประมาณ': p.commissionEstimated ? 'ใช่' : '',
       'ค่าคอม/ชิ้น (บาท)': p.commissionPerUnit != null ? Math.round(p.commissionPerUnit) : '',
       [`ค่าคอมรวม ${d} วัน (บาท)`]: p.commissionTotal != null ? Math.round(p.commissionTotal) : '',
+      ...(has('videos') ? { 'ได้เฉลี่ยต่อคลิป (บาท)': p.earnPerVideo != null ? Math.round(p.earnPerVideo) : '' } : {}),
+      ...(has('lives') ? { 'ได้เฉลี่ยต่อไลฟ์ (บาท)': p.earnPerLive != null ? Math.round(p.earnPerLive) : '' } : {}),
     } : {}),
     ...(has('channels') ? { 'ขายผ่าน Live (%)': Math.round(p.liveShare * 100), 'ขายผ่านวิดีโอ (%)': Math.round(p.videoShare * 100) } : {}),
     ...(has('creators') ? { 'ครีเอเตอร์': p.creators, 'ยอดขาย/ครีเอเตอร์': p.salesPerCreator != null ? Math.round(p.salesPerCreator) : '' } : {}),
@@ -315,6 +406,7 @@ function exportExcel() {
     ...(has('soldTotal') ? { 'ยอดขายสะสม': p.soldTotal ?? '' } : {}),
     'เติบโต (%)': Math.round(p.growth * 10) / 10,
     'ลิงก์': p.url ?? '',
+    'โน้ต': shortlist.get(p.id)?.note ?? '',
   }));
   const ws = XLSX.utils.json_to_sheet(rows);
   ws['!cols'] = Object.keys(rows[0] ?? {}).map((k) => ({ wch: k === 'สินค้า' || k === 'ลิงก์' ? 40 : Math.max(10, k.length + 2) }));
@@ -347,12 +439,24 @@ async function init() {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => { state.q = e.target.value.trim(); render(); }, 200);
   });
+  $('starFilter').addEventListener('click', () => {
+    state.onlyStarred = !state.onlyStarred;
+    $('starFilter').setAttribute('aria-pressed', state.onlyStarred);
+    render();
+  });
   $('rows').addEventListener('click', (e) => {
+    const star = e.target.closest('[data-star]');
+    if (star) {
+      toggleStar(star.dataset.star);
+      render();
+      return;
+    }
     const tr = e.target.closest('tr[data-id]');
     if (tr) openDetail(tr.dataset.id);
   });
   $('refresh').addEventListener('click', refresh);
   $('export').addEventListener('click', exportExcel);
+  saveShortlist();
   render();
   startPolling();
 }

@@ -77,6 +77,21 @@ main > * { min-width: 0; }
 .btn.icon { padding: 4px 10px; }
 
 .filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+.badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.badge-sm { font-size: 11px; line-height: 1.6; padding: 0 7px; border-radius: 999px; white-space: nowrap; background: var(--hover); color: var(--text); border: 1px solid var(--border); }
+.stage-rising { background: color-mix(in srgb, #10b981 18%, transparent); border-color: transparent; }
+.stage-peak { background: color-mix(in srgb, #fe2c55 18%, transparent); border-color: transparent; }
+.stage-falling { background: color-mix(in srgb, #9ca3af 22%, transparent); border-color: transparent; }
+.stage-steady { background: color-mix(in srgb, #60a5fa 16%, transparent); border-color: transparent; }
+.star-col { width: 36px; padding-right: 0; }
+.star { font-size: 18px; line-height: 1; background: none; border: 0; cursor: pointer; color: var(--muted); padding: 4px; }
+.star.on { color: #f59e0b; }
+.star-filter[aria-pressed="true"] { background: color-mix(in srgb, #f59e0b 20%, transparent); border-color: #f59e0b; }
+.est { font-size: 11px; color: var(--muted); font-weight: 400; }
+.dialog-actions { display: flex; gap: 8px; align-items: flex-start; }
+#dBadges { margin: -4px 0 12px; }
+.note-field { display: grid; gap: 4px; margin-top: 14px; font-size: 12px; color: var(--muted); }
+.note-field textarea { font: inherit; font-size: 14px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); resize: vertical; }
 .help { margin: -4px 0 0; font-size: 13px; color: var(--muted); }
 .sub-val { display: block; font-size: 12px; color: var(--muted); font-weight: 400; }
 .com-rate { font-weight: 600; color: var(--up); }

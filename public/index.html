@@ -59,6 +59,7 @@
       <label class="field search">ค้นหา
         <input id="search" type="search" placeholder="ชื่อสินค้าหรือร้าน" autocomplete="off">
       </label>
+      <button id="starFilter" class="btn star-filter" aria-pressed="false">⭐ ที่เก็บไว้ <span id="starCount">0</span></button>
     </section>
     <p id="sortHelp" class="help"></p>
 
@@ -82,6 +83,7 @@
         <table>
           <thead>
             <tr>
+              <th class="star-col" aria-label="เก็บไว้"></th>
               <th class="num">#</th>
               <th>สินค้า</th>
               <th class="num" id="salesHead">ยอดขาย</th>
@@ -107,14 +109,21 @@
         <h3 id="dTitle"></h3>
         <p id="dMeta" class="muted"></p>
       </div>
-      <button class="btn icon" aria-label="ปิด">✕</button>
+      <div class="dialog-actions">
+        <button type="button" id="dStar" class="btn">☆ เก็บไว้</button>
+        <button class="btn icon" aria-label="ปิด">✕</button>
+      </div>
     </form>
+    <div id="dBadges" class="badges"></div>
     <div class="gallery" id="dGallery" hidden>
       <img id="dMainImg" class="gallery-main" alt="" referrerpolicy="no-referrer">
       <div class="gallery-thumbs" id="dThumbs"></div>
     </div>
     <div class="kpis" id="dKpis"></div>
     <div class="chart-wrap"><canvas id="detailChart"></canvas></div>
+    <label class="note-field" id="dNoteWrap" hidden>โน้ตของฉัน
+      <textarea id="dNote" rows="2" placeholder="เช่น ขอ sample แล้ว · ถ่ายคลิปวันศุกร์"></textarea>
+    </label>
   </dialog>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>

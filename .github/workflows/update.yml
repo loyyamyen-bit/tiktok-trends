@@ -27,6 +27,7 @@ jobs:
       # ตั้งค่าได้ที่ Settings → Secrets and variables → Actions
       DATA_PROVIDER: ${{ vars.DATA_PROVIDER || 'mock' }}
       APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+      DEFAULT_COMMISSION_RATE: ${{ vars.DEFAULT_COMMISSION_RATE || '0.1' }}
     steps:
       - uses: actions/checkout@v4
 

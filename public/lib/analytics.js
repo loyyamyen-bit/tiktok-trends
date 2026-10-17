@@ -19,6 +19,24 @@ function growthPct(current, previous) {
   return ((current - previous) / previous) * 100;
 }
 
+// ช่วงของกระแส จากยอดขาย 7 วันล่าสุดเทียบกับ 7 วันก่อนหน้า และระดับปกติ (วันที่ 15–28 ย้อนหลัง)
+//   rising  🌱 เพิ่งเริ่มขึ้น — โตแรงจากระดับปกติ เข้าตอนนี้ได้เปรียบ
+//   peak    🔥 กำลังพีค     — ยอดสูงกว่าปกติมาก คนเริ่มแห่เข้ามา
+//   falling 📉 เริ่มขาลง
+//   steady  💤 ทรงตัว
+export function trendStage(arr = [], end) {
+  if (end < 27) return null; // ข้อมูลไม่พอ
+  const recent = sumRange(arr, end, 7);
+  const prev = sumRange(arr, end - 7, 7);
+  const base = sumRange(arr, end - 14, 14) / 2;
+  if (!prev || !base) return recent ? 'rising' : null;
+  const g = recent / prev - 1;
+  if (g > 0.2) return prev <= base * 1.2 ? 'rising' : 'peak';
+  if (g < -0.15) return 'falling';
+  if (recent >= base * 1.3) return 'peak';
+  return 'steady';
+}
+
 function metrics(data, p, end, days, channel) {
   const sr = data.series[p.id] ?? {};
   const key = CHANNEL_KEY[channel] ?? 's';
@@ -27,7 +45,11 @@ function metrics(data, p, end, days, channel) {
   const liveSales = sumRange(sr.l, end, days);
   const videoSales = sumRange(sr.d, end, days);
   const creators = sr.c?.[end] ?? 0;
-  const rate = p.commissionRate ?? null;
+  // ไม่มี % ค่าคอมจากแหล่งข้อมูล → ใช้ค่าเริ่มต้น (ค่าประมาณ)
+  const rate = p.commissionRate ?? data.defaultCommissionRate ?? null;
+  const commissionPerUnit = rate != null ? p.price * rate : null;
+  const videos = sumRange(sr.n, end, days);
+  const lives = sumRange(sr.k, end, days);
   return {
     ...p,
     sales, // ยอดขายของช่องทางที่เลือก
@@ -38,10 +60,16 @@ function metrics(data, p, end, days, channel) {
     liveShare: totalSales ? liveSales / totalSales : 0,
     videoShare: totalSales ? videoSales / totalSales : 0,
     creators,
-    videos: sumRange(sr.n, end, days),
-    lives: sumRange(sr.k, end, days),
+    videos,
+    lives,
     soldTotal: sr.t ?? null,
-    commissionPerUnit: rate != null ? p.price * rate : null,
+    rate,
+    commissionEstimated: p.commissionRate == null,
+    commissionPerUnit,
+    // ค่าคอมเฉลี่ยที่ครีเอเตอร์ได้ต่อคลิป / ต่อไลฟ์ 1 ครั้ง
+    earnPerVideo: commissionPerUnit != null && videos ? (videoSales / videos) * commissionPerUnit : null,
+    earnPerLive: commissionPerUnit != null && lives ? (liveSales / lives) * commissionPerUnit : null,
+    stage: trendStage(sr.s, end),
     // ค่าคอมที่ครีเอเตอร์ทั้งหมดได้จากช่องทางที่เลือกในช่วงนี้ — บอกว่าสินค้านี้ "ทำเงิน" ให้ Affiliate แค่ไหน
     commissionTotal: rate != null ? sales * p.price * rate : null,
     // ยอดขายต่อครีเอเตอร์ — สูง = ขายดีแต่คนโปรโมทยังน้อย (โอกาส)
@@ -67,24 +95,44 @@ function rankAt(data, products, end, days, sort, channel) {
   return rows.sort(SORTS[sort] ?? SORTS.sales);
 }
 
+// ป้ายสรุปจุดเด่น — เกณฑ์ "คู่แข่งน้อย" เทียบกับสินค้าอื่นในมุมมองเดียวกัน (20% บนสุด)
+function tagger(rows, data) {
+  const spc = rows.map((r) => r.salesPerCreator).filter((x) => x != null).sort((a, b) => b - a);
+  const spcTop = spc[Math.floor(spc.length * 0.2)] ?? Infinity;
+  const minSales = (data.growthMinSalesPerDay ?? 5) * 7;
+  return (r) => {
+    const tags = [];
+    if (r.growth >= 50 && r.sales >= minSales) tags.push('hot');
+    if (!r.commissionEstimated && r.rate >= 0.2) tags.push('highCommission');
+    if (r.salesPerCreator != null && r.salesPerCreator >= spcTop && r.sales >= minSales) tags.push('lowCompetition');
+    if (data.has?.channels && r.liveShare >= 0.5) tags.push('live');
+    if (data.has?.channels && r.videoShare >= 0.55) tags.push('video');
+    return tags;
+  };
+}
+
 function matches(p, q) {
   const needle = q?.trim().toLowerCase();
   return !needle || p.name.toLowerCase().includes(needle) || p.shop.toLowerCase().includes(needle);
 }
 
-export function ranking(data, { category, q, days = 7, sort = 'sales', channel = 'all', minCommission = 0, limit = 50 }) {
+export function ranking(data, { category, q, only, days = 7, sort = 'sales', channel = 'all', minCommission = 0, limit = 50 }) {
   const end = data.dates.length - 1;
   if (end < 0) return [];
   const products = data.products.filter(
-    (p) => (!category || p.category === category) && (!minCommission || (p.commissionRate ?? 0) >= minCommission),
+    (p) =>
+      (!category || p.category === category) &&
+      (!minCommission || (p.commissionRate ?? data.defaultCommissionRate ?? 0) >= minCommission),
   );
   const current = rankAt(data, products, end, days, sort, channel);
   const prevRank = new Map(rankAt(data, products, end - 1, days, sort, channel).map((r, i) => [r.id, i + 1]));
 
-  // ค้นหาหลังจัดอันดับ เพื่อให้อันดับที่แสดงเป็นอันดับจริงในหมวดนั้น
+  const tags = tagger(current, data);
+
+  // ค้นหา/กรองรายการที่เก็บไว้หลังจัดอันดับ เพื่อให้อันดับที่แสดงเป็นอันดับจริงในหมวดนั้น
   return current
-    .map((r, i) => ({ ...r, rank: i + 1 }))
-    .filter((r) => matches(r, q))
+    .map((r, i) => ({ ...r, rank: i + 1, tags: tags(r) }))
+    .filter((r) => matches(r, q) && (!only || only.has(r.id)))
     .slice(0, limit)
     .map((r) => ({
       ...r,
