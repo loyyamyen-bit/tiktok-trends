@@ -140,6 +140,32 @@
     </label>
   </dialog>
 
+  <dialog id="manual">
+    <form id="manualForm" class="manual-form">
+      <div class="dialog-head">
+        <div>
+          <h3>✏️ กรอกข้อมูลสินค้า</h3>
+          <p id="mName" class="muted"></p>
+        </div>
+        <button type="button" class="btn icon" id="mClose" aria-label="ปิด">✕</button>
+      </div>
+      <p class="help">ดูตัวเลขจากแอป TikTok แล้วกรอกได้เลย ไม่ต้องกรอกครบทุกช่อง · กรอก "ขายแล้ว" ซ้ำทุกวันหรือทุกครั้งที่เปิดดู ระบบจะคำนวณยอดขายต่อวันให้</p>
+      <div class="manual-grid">
+        <label class="field">ราคา (บาท)<input id="mPrice" type="number" min="0" step="1" inputmode="decimal" placeholder="เช่น 159"></label>
+        <label class="field">ขายแล้ว (ชิ้น)<input id="mSold" type="number" min="0" step="1" inputmode="numeric" placeholder="เช่น 12500"></label>
+        <label class="field">ค่าคอม (%)<input id="mRate" type="number" min="0" max="100" step="0.5" inputmode="decimal" placeholder="เช่น 15"></label>
+        <label class="field">หมวดหมู่<select id="mCategory"></select></label>
+        <label class="field full">ชื่อร้าน<input id="mShop" type="text" maxlength="80" placeholder="เช่น CHAABA Official"></label>
+      </div>
+      <p id="mHistory" class="muted"></p>
+      <p id="mErr" class="link-msg err" hidden></p>
+      <div class="an-foot">
+        <span class="muted">"ขายแล้ว" ดูได้ใต้ราคาในหน้าสินค้า · % ค่าคอมดูใน Affiliate Center</span>
+        <button class="btn primary" id="mSave">บันทึก</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="analysis">
     <form method="dialog" class="dialog-head">
       <div class="an-head">

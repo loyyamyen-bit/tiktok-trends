@@ -257,7 +257,7 @@ function showAnalysis(id) {
       <div class="an-sec"><h4>📊 ความเห็นต่อตัวเลข</h4><p>${escapeHtml(a.dataNote)}</p></div>
     </div>`;
   const when = new Date(rec.analyzedAt).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
-  $('aMeta').textContent = `วิเคราะห์เมื่อ ${when}${rec.withSalesData ? ' · ใช้ข้อมูลยอดขายประกอบ' : ' · ยังไม่มีข้อมูลยอดขาย'}${rec.costUsd != null ? ` · ค่าใช้จ่าย ~$${rec.costUsd}` : ''}`;
+  $('aMeta').textContent = `${rec.source === 'chat' ? 'วิเคราะห์โดย Claude ในแชท · ' : ''}วิเคราะห์เมื่อ ${when}${rec.withSalesData ? ' · ใช้ข้อมูลยอดขายประกอบ' : ' · ยังไม่มีข้อมูลยอดขาย'}${rec.costUsd != null ? ` · ค่าใช้จ่าย ~$${rec.costUsd}` : ''}`;
   $('aRedo').hidden = !state.data.canAnalyze;
   $('aRedo').onclick = () => runAnalysis(id, $('aRedo'), true);
   if (!$('analysis').open) $('analysis').showModal();
@@ -296,8 +296,8 @@ function renderLinks() {
       const m = metrics.get(l.id);
       const img = l.image ?? m?.image;
       const stats = m
-        ? `<div class="lcard-stats">฿${fmt.format(m.price)} · ขาย 7 วัน <b>${fmt.format(m.sales)}</b> ชิ้น${m.rate != null ? ` · คอม ${m.commissionEstimated ? '~' : ''}${pct(m.rate)}` : ''}</div>${badgesHtml(m)}`
-        : `<div class="lcard-stats">${l.type === 'shop' ? 'ร้านค้า · ' : ''}รอข้อมูลราคาและยอดขาย${state.data.provider === 'mock' ? ' (ต้องใช้ข้อมูลจริงจาก Apify)' : ' (เก็บข้อมูลครั้งถัดไป)'}</div>`;
+        ? `<div class="lcard-stats">${m.price ? `฿${fmt.format(m.price)} · ` : ''}ขาย 7 วัน <b>${fmt.format(m.totalSales)}</b> ชิ้น${m.soldTotal != null ? ` · ขายแล้ว <b>${fmtCompact.format(m.soldTotal)}</b>` : ''}${m.rate != null ? ` · คอม ${m.commissionEstimated ? '~' : ''}${pct(m.rate)}` : ''}</div>${badgesHtml(m)}`
+        : `<div class="lcard-stats">${l.type === 'shop' ? 'ร้านค้า · ' : ''}ยังไม่มีราคาและยอดขาย${l.type === 'product' && canEdit ? ' · กด ✏️ กรอกข้อมูล (ฟรี)' : ''}</div>`;
       return `<div class="lcard ${m ? 'has-data' : ''}" data-link="${escapeHtml(l.id)}">
         <div class="lcard-img">${img ? `<img src="${escapeHtml(img)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith('${l.type === 'shop' ? '🏪' : '🛍️'}')">` : (l.type === 'shop' ? '🏪' : '🛍️')}</div>
         <div class="lcard-body">
@@ -305,10 +305,11 @@ function renderLinks() {
           ${stats}
           ${miniScoresHtml(l.id)}
           ${l.type === 'product' && !analysisOf(l.id) && canEdit && !state.data.canAnalyze
-            ? '<div class="lcard-stats">🤖 ยังวิเคราะห์ด้วย AI ไม่ได้: ต้องใส่ ANTHROPIC_API_KEY ในไฟล์ .env ก่อน</div>'
+            ? '<div class="lcard-stats">🤖 ยังไม่มีผลวิเคราะห์ · ส่งลิงก์ให้ Claude วิเคราะห์ในแชทได้ฟรี (หรือใส่ ANTHROPIC_API_KEY เพื่อใช้ปุ่มบนเว็บ)</div>'
             : ''}
         </div>
         <div class="lcard-actions">
+          ${l.type === 'product' && canEdit ? `<button type="button" class="btn sm" data-manual="${escapeHtml(l.id)}">✏️ กรอกข้อมูล</button>` : ''}
           ${l.type === 'product' ? analyzeButtonHtml(l.id, true) : ''}
           ${linkButtonsHtml({ url: l.url, shopUrl: m?.shopUrl }, true)}
           ${canEdit ? `<button type="button" class="btn sm" data-unlink="${escapeHtml(l.id)}" aria-label="ลบ">✕</button>` : ''}
@@ -316,6 +317,54 @@ function renderLinks() {
       </div>`;
     }).join('')
     : '<p class="muted">ยังไม่มีลิงก์ ลองวางลิงก์สินค้าจากแอป TikTok ด้านบน</p>';
+}
+
+// ---------- กรอกข้อมูลเอง ----------
+function openManual(id) {
+  const link = state.data.links.find((l) => l.id === id);
+  const m = link.manual ?? {};
+  const last = m.entries?.at(-1);
+  $('manualForm').dataset.id = id;
+  $('mName').textContent = link.name;
+  $('mPrice').value = m.price ?? '';
+  $('mSold').value = last?.soldTotal ?? '';
+  $('mRate').value = m.commissionRate != null ? Math.round(m.commissionRate * 1000) / 10 : '';
+  $('mShop').value = m.shop ?? '';
+  const cats = state.data.categories.some((c) => c.id === 'other') ? state.data.categories : [...state.data.categories, { id: 'other', name: 'อื่น ๆ', icon: '🛍️' }];
+  $('mCategory').innerHTML = cats.map((c) => `<option value="${c.id}">${c.icon} ${c.name}</option>`).join('');
+  $('mCategory').value = m.category ?? 'other';
+  $('mHistory').textContent = m.entries?.length
+    ? `กรอกยอด "ขายแล้ว" ไว้ ${m.entries.length} ครั้ง ล่าสุด ${new Date(`${last.date}T00:00:00`).toLocaleDateString('th-TH', { dateStyle: 'medium' })}: ${fmt.format(last.soldTotal)} ชิ้น`
+    : '';
+  $('mErr').hidden = true;
+  $('manual').showModal();
+}
+
+async function saveManual(e) {
+  e.preventDefault();
+  const id = $('manualForm').dataset.id;
+  $('mSave').disabled = true;
+  try {
+    await api(`api/links/${encodeURIComponent(id)}/manual`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        price: $('mPrice').value,
+        soldTotal: $('mSold').value,
+        commissionPercent: $('mRate').value,
+        shop: $('mShop').value,
+        category: $('mCategory').value,
+      }),
+    });
+    $('manual').close();
+    await loadData();
+    render();
+  } catch (err) {
+    $('mErr').hidden = false;
+    $('mErr').textContent = err.message;
+  } finally {
+    $('mSave').disabled = false;
+  }
 }
 
 function showLinkMsg(text, ok) {
@@ -642,11 +691,15 @@ async function init() {
   $('refresh').addEventListener('click', refresh);
   $('export').addEventListener('click', exportExcel);
   $('linkForm').addEventListener('submit', submitLink);
+  $('manualForm').addEventListener('submit', saveManual);
+  $('mClose').addEventListener('click', () => $('manual').close());
   // ปุ่มคัดลอก/ลบ/เปิดลิงก์ ใช้ได้ทั้งในการ์ดลิงก์และหน้ารายละเอียด
   document.addEventListener('click', (e) => {
     const copy = e.target.closest('[data-copy]');
     if (copy) { e.stopPropagation(); copyText(copy); return; }
     if (e.target.closest('[data-stop]')) { e.stopPropagation(); return; }
+    const man = e.target.closest('[data-manual]');
+    if (man) { e.stopPropagation(); openManual(man.dataset.manual); return; }
     const an = e.target.closest('[data-analyze]');
     if (an) { e.stopPropagation(); runAnalysis(an.dataset.analyze, an); return; }
     const un = e.target.closest('[data-unlink]');

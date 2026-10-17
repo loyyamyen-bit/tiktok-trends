@@ -15,7 +15,7 @@ const PRICE_PER_MTOK = { input: 4, output: 20 };
 // โหลดรูปจาก CDN ของ TikTok เท่านั้น
 const IMAGE_HOST = /(^|\.)(ibyteimg\.com|tiktokcdn\.com|tiktokcdn-us\.com|byteimg\.com)$/;
 
-const SCHEMA = {
+export const SCHEMA = {
   type: 'object',
   additionalProperties: false,
   required: ['summary', 'bestFormat', 'live', 'video', 'targetAudience', 'sellingPoints', 'hooks', 'contentIdeas', 'liveOutline', 'cautions', 'checklist', 'dataNote'],
@@ -67,7 +67,7 @@ export function loadAnalyses() {
   }
 }
 
-function saveAnalysis(id, record) {
+export function saveAnalysis(id, record) {
   const all = loadAnalyses();
   all[id] = record;
   fs.mkdirSync(DATA_DIR, { recursive: true });

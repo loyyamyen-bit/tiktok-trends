@@ -133,6 +133,11 @@ main > * { min-width: 0; }
 .btn.ai { border-color: #8b5cf6; color: #8b5cf6; }
 @media (prefers-color-scheme: dark) { .btn.ai { color: #a78bfa; border-color: #a78bfa; } }
 @media (max-width: 640px) { .an-grid, .an-scores { grid-template-columns: 1fr; } }
+.manual-form .help { margin: 0 0 12px; }
+.manual-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
+.manual-grid .field input, .manual-grid .field select { width: 100%; min-width: 0; font: inherit; font-size: 15px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+.manual-grid .full { grid-column: 1 / -1; }
+#manual { width: min(520px, calc(100vw - 32px)); }
 .help { margin: -4px 0 0; font-size: 13px; color: var(--muted); }
 .sub-val { display: block; font-size: 12px; color: var(--muted); font-weight: 400; }
 .com-rate { font-weight: 600; color: var(--up); }

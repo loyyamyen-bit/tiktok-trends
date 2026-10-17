@@ -116,3 +116,35 @@ export function removeLink(id) {
   console.log(`[links] ลบ ${id}`);
   return links.length !== next.length;
 }
+
+// ข้อมูลที่ผู้ใช้กรอกเองจากแอป (ฟรี ไม่ต้องใช้ Apify)
+//   manual: { price, commissionRate, shop, category, entries: [{ date, soldTotal }] }
+// กรอก "ขายแล้ว X ชิ้น" ซ้ำในวันถัดไป → ระบบคำนวณยอดขายรายวันจากผลต่าง
+export function updateManual(id, input, date) {
+  const links = loadLinks();
+  const link = links.find((l) => l.id === id);
+  if (!link) throw new Error('ไม่พบลิงก์');
+  const num = (v) => (v === '' || v == null || !Number.isFinite(Number(v)) ? null : Number(v));
+  const manual = link.manual ?? { entries: [] };
+
+  const price = num(input.price);
+  const rate = num(input.commissionPercent);
+  const sold = num(input.soldTotal);
+  if (price != null && price < 0) throw new Error('ราคาต้องไม่ติดลบ');
+  if (rate != null && (rate < 0 || rate > 100)) throw new Error('% ค่าคอมต้องอยู่ระหว่าง 0–100');
+  if (sold != null && sold < 0) throw new Error('ยอดขายต้องไม่ติดลบ');
+
+  manual.price = price;
+  manual.commissionRate = rate != null ? rate / 100 : null;
+  manual.shop = typeof input.shop === 'string' ? input.shop.trim().slice(0, 80) : manual.shop ?? '';
+  manual.category = typeof input.category === 'string' && input.category ? input.category : manual.category ?? 'other';
+  if (sold != null) {
+    // กรอกซ้ำในวันเดียวกัน → ใช้ค่าล่าสุดของวันนั้น
+    manual.entries = [...manual.entries.filter((e) => e.date !== date), { date, soldTotal: Math.round(sold) }]
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }
+  link.manual = manual;
+  saveLinks(links);
+  console.log(`[links] กรอกข้อมูล ${id}`);
+  return link;
+}

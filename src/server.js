@@ -5,10 +5,10 @@ import cron from 'node-cron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as store from './store.js';
-import { collectMissing, provider, TIMEZONE } from './collector.js';
+import { collectMissing, provider, TIMEZONE, today } from './collector.js';
 import { buildDataset } from './dataset.js';
 import Anthropic from '@anthropic-ai/sdk';
-import { addLink, loadLinks, removeLink } from './links.js';
+import { addLink, loadLinks, removeLink, updateManual } from './links.js';
 import { analyzeProduct, loadAnalyses } from './analyzer.js';
 import { ranking } from '../public/lib/analytics.js';
 
@@ -33,6 +33,15 @@ app.post('/api/links', express.json({ limit: '10kb' }), async (req, res) => {
   if (typeof req.body?.url !== 'string') return res.status(400).json({ error: 'กรุณาวางลิงก์' });
   try {
     res.json(await addLink(req.body.url));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// บันทึกราคา / ยอดขายสะสม / % ค่าคอม ที่ผู้ใช้กรอกเอง
+app.put('/api/links/:id/manual', express.json({ limit: '10kb' }), (req, res) => {
+  try {
+    res.json(updateManual(req.params.id, req.body ?? {}, today()));
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
