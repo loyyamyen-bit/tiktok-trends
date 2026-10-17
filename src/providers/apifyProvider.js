@@ -29,6 +29,13 @@ export function parseCount(value) {
   return Math.round(Number(m[1]) * mult);
 }
 
+// "15%", 15 หรือ 0.15 → 0.15
+function parseRate(value) {
+  const n = parsePrice(value);
+  if (n == null) return null;
+  return n > 1 ? n / 100 : n;
+}
+
 function parsePrice(value) {
   if (value == null) return null;
   if (typeof value === 'number') return value;
@@ -61,8 +68,12 @@ export function normalizeItem(item, country, category) {
     icon: CATEGORIES.find((c) => c.id === category)?.icon ?? '🛍️',
     image: images[0] ?? null,
     images,
-    url: item.product_url ?? item.url ?? null,
+    url: item.product_url ?? item.url ?? item.productUrl ?? null,
+    // ฟิลด์สำหรับ Affiliate — มีเฉพาะบาง actor ถ้าไม่มีหน้าเว็บจะซ่อนคอลัมน์นั้นเอง
+    commissionRate: parseRate(item.commission_rate ?? item.commissionRate),
     soldTotal,
+    creators: parseCount(item.creatorCount ?? item.creator_count),
+    videos: parseCount(item.videoCount ?? item.video_count),
   };
 }
 
@@ -157,8 +168,9 @@ export const apifyProvider = {
     for (const p of results.flat()) if (!byId.has(p.id)) byId.set(p.id, p);
     if (!byId.size) throw new Error('Apify ไม่คืนข้อมูลสินค้าเลย (ตรวจ token, เครดิต หรือ actor)');
 
-    const products = [...byId.values()].map(({ soldTotal, ...p }) => p);
-    const rows = [...byId.values()].map((p) => ({ productId: p.id, soldTotal: p.soldTotal }));
+    const products = [...byId.values()].map(({ soldTotal, creators, videos, ...p }) => p);
+    // videos ของ actor เป็นยอดสะสม จึงไม่ส่งเป็นวิดีโอใหม่รายวัน แต่ creators เป็นจำนวน ณ วันนั้นใช้ได้เลย
+    const rows = [...byId.values()].map((p) => ({ productId: p.id, soldTotal: p.soldTotal, creators: p.creators ?? undefined }));
     return { products, rows };
   },
 };

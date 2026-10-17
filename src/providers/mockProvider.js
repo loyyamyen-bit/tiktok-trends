@@ -6,15 +6,11 @@
 //   supportsBackfill: boolean   (ขอข้อมูลของวันในอดีตได้หรือไม่)
 //   getCatalog(): Promise<{ categories, countries, products }>
 //   fetchSnapshot(date): Promise<rows | { products, rows }>
-//     rows: Array<{ productId, sales, views, gmv }> หรือ { productId, soldTotal } ถ้ามีแต่ยอดขายสะสม
+//     rows: Array<{ productId, sales, gmv, liveSales?, videoSales?, creators?, videos?, lives? }>
+//           หรือ { productId, soldTotal, ... } ถ้ามีแต่ยอดขายสะสม
+//   สินค้าอาจมี commissionRate (เช่น 0.15 = 15%) ถ้าแหล่งข้อมูลมีให้
 
-export const COUNTRIES = [
-  { code: 'TH', name: 'ไทย' },
-  { code: 'VN', name: 'เวียดนาม' },
-  { code: 'ID', name: 'อินโดนีเซีย' },
-  { code: 'MY', name: 'มาเลเซีย' },
-  { code: 'PH', name: 'ฟิลิปปินส์' },
-];
+export const COUNTRIES = [{ code: 'TH', name: 'ไทย' }];
 
 export const CATEGORIES = [
   { id: 'beauty', name: 'ความงาม', icon: '💄' },
@@ -106,34 +102,43 @@ function rand(seed) {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 }
 
+// แต่ละสินค้ามีขาย 3 ร้าน (ราคา ค่าคอม และแนวโน้มต่างกัน) — ร้านไทยเท่านั้น
+const SHOPS_PER_PRODUCT = 3;
+
 function buildProducts() {
   const products = [];
-  for (const country of COUNTRIES) {
-    for (const category of CATEGORIES) {
-      TEMPLATES[category.id].forEach(([name, price], i) => {
-        const id = `${country.code}-${category.id}-${i}`;
+  for (const category of CATEGORIES) {
+    TEMPLATES[category.id].forEach(([name, price], i) => {
+      for (let v = 0; v < SHOPS_PER_PRODUCT; v++) {
+        const id = `TH-${category.id}-${i}-${v}`;
         const h = hashString(id);
+        const liveShare = 0.1 + rand(h + 10) * 0.6; // สัดส่วนยอดขายจาก Live
         products.push({
           id,
           name,
           category: category.id,
-          country: country.code,
-          price: Math.round(price * (0.85 + rand(h) * 0.3)),
+          country: 'TH',
+          price: Math.round(price * (0.8 + rand(h) * 0.4)),
           shop: `${SHOP_NAME[h % SHOP_NAME.length]} ${SHOP_PREFIX[(h >>> 4) % SHOP_PREFIX.length]}`,
           icon: category.icon,
+          commissionRate: Math.round((5 + rand(h + 9) * 20) * 10) / 1000, // 5–25%
           // พารามิเตอร์รูปแบบแนวโน้ม (ใช้ภายใน provider เท่านั้น)
           _trend: {
-            base: 50 + Math.floor(rand(h + 1) * 900),
+            base: 30 + Math.floor(rand(h + 1) * 600),
             amp: 0.2 + rand(h + 2) * 0.6, // ความแรงของคลื่นขึ้น-ลง
             period: 40 + Math.floor(rand(h + 3) * 80), // วัน
             offset: Math.floor(rand(h + 4) * 365),
             viralEvery: 30 + Math.floor(rand(h + 5) * 60), // ไวรัลทุก ๆ กี่วัน
             viralPower: rand(h + 6) < 0.35 ? 2 + rand(h + 7) * 6 : 0,
-            viewsPerSale: 40 + Math.floor(rand(h + 8) * 160),
+            liveShare,
+            videoShare: (1 - liveShare) * (0.4 + rand(h + 11) * 0.5),
+            creatorsBase: 5 + Math.floor(rand(h + 12) * 400),
+            salesPerVideo: 8 + rand(h + 13) * 40,
+            salesPerLive: 20 + rand(h + 14) * 120,
           },
         });
-      });
-    }
+      }
+    });
   }
   return products;
 }
@@ -151,7 +156,7 @@ function salesOn(product, day) {
   const phase = (day + t.offset) % t.viralEvery;
   const viral = t.viralPower ? t.viralPower * Math.exp(-phase / 4) : 0;
   const noise = 0.85 + rand(hashString(product.id) + day * 7919) * 0.3;
-  return Math.max(0, Math.round(t.base * (wave + viral) * noise));
+  return { sales: Math.max(0, Math.round(t.base * (wave + viral) * noise)), heat: wave + viral };
 }
 
 export const mockProvider = {
@@ -169,12 +174,20 @@ export const mockProvider = {
   async fetchSnapshot(date) {
     const day = dayNumber(date);
     return PRODUCTS.map((p) => {
-      const sales = salesOn(p, day);
+      const t = p._trend;
+      const { sales, heat } = salesOn(p, day);
+      const liveSales = Math.round(sales * t.liveShare);
+      const videoSales = Math.round(sales * t.videoShare);
       return {
         productId: p.id,
         sales,
-        views: sales * p._trend.viewsPerSale,
         gmv: sales * p.price,
+        liveSales,
+        videoSales,
+        // ครีเอเตอร์แห่มาโปรโมทตามกระแส แต่ตามหลังยอดขายเล็กน้อย
+        creators: Math.round(t.creatorsBase * (0.6 + heat * 0.4)),
+        videos: Math.round(videoSales / t.salesPerVideo),
+        lives: Math.round(liveSales / t.salesPerLive),
       };
     });
   },

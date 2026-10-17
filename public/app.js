@@ -1,12 +1,21 @@
 import { ranking, history } from './lib/analytics.js';
 
-const state = { sort: 'sales', days: 7, country: '', category: '', q: '', data: null, items: [] };
+const state = { sort: 'sales', channel: 'all', days: 7, category: '', minCommission: 0, q: '', data: null };
 const LINE_COLORS = ['#fe2c55', '#25c2c9', '#f59e0b', '#8b5cf6', '#10b981'];
 const POLL_MS = 5 * 60 * 1000;
+
+const SORT_LABEL = {
+  sales: ['สินค้าขายดี', 'เรียงตามยอดขายในช่วงที่เลือก'],
+  growth: ['สินค้ามาแรง', 'เรียงตามการเติบโตของยอดขายเทียบกับช่วงก่อนหน้า เหมาะกับการจับกระแสก่อนคนอื่น'],
+  commission: ['ค่าคอมสูง', 'เรียงตามค่าคอมรวมที่ครีเอเตอร์ได้จากสินค้านี้ (ยอดขาย × ราคา × % ค่าคอม) คือสินค้าที่ทำเงินให้ Affiliate ได้จริง'],
+  opportunity: ['คู่แข่งน้อย', 'เรียงตามยอดขายต่อครีเอเตอร์ 1 คน ยิ่งสูงยิ่งดี แปลว่าขายดีแต่คนโปรโมทยังน้อย'],
+};
+const CHANNEL_LABEL = { all: '', live: ' · Live', video: ' · วิดีโอ' };
 
 const $ = (id) => document.getElementById(id);
 const fmt = new Intl.NumberFormat('th-TH');
 const fmtCompact = new Intl.NumberFormat('th-TH', { notation: 'compact', maximumFractionDigits: 1 });
+const pct = (x) => `${Math.round(x * 100)}%`;
 let trendChart;
 let detailChart;
 
@@ -22,12 +31,6 @@ async function api(path, options) {
 function categoryName(id) {
   return state.data.categories.find((c) => c.id === id)?.name ?? id;
 }
-function countryName(code) {
-  return state.data.countries.find((c) => c.code === code)?.name ?? code;
-}
-function isLive() {
-  return state.data.provider !== 'mock';
-}
 function shortDate(date) {
   return new Date(`${date}T00:00:00`).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
 }
@@ -36,6 +39,9 @@ function cssVar(name) {
 }
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+}
+function has(key) {
+  return Boolean(state.data.has?.[key]);
 }
 
 function growthHtml(g) {
@@ -63,6 +69,15 @@ function sparkline(values) {
   });
   const color = values[values.length - 1] >= values[0] ? cssVar('--up') : cssVar('--down');
   return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><polyline fill="none" stroke="${color}" stroke-width="1.75" stroke-linejoin="round" points="${pts.join(' ')}"/></svg>`;
+}
+
+function channelHtml(p) {
+  const other = Math.max(0, 1 - p.liveShare - p.videoShare);
+  return `<div class="chbar" title="Live ${pct(p.liveShare)} · วิดีโอ ${pct(p.videoShare)} · อื่น ๆ ${pct(other)}">
+      <span class="ch-live" style="width:${p.liveShare * 100}%"></span>
+      <span class="ch-video" style="width:${p.videoShare * 100}%"></span>
+    </div>
+    <span class="chlabel"><span class="dot ch-live"></span>Live ${pct(p.liveShare)} · <span class="dot ch-video"></span>วิดีโอ ${pct(p.videoShare)}</span>`;
 }
 
 function chartDefaults() {
@@ -95,6 +110,12 @@ function thumbHtml(p) {
     : `<span class="thumb">${p.icon}</span>`;
 }
 
+function nameHtml(p) {
+  const name = escapeHtml(p.name);
+  if (!/^https?:\/\//.test(p.url ?? '')) return name;
+  return `<a href="${escapeHtml(p.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${name}</a>`;
+}
+
 function renderGallery(product) {
   const images = product.images?.length ? product.images : product.image ? [product.image] : [];
   $('dGallery').hidden = images.length === 0;
@@ -114,47 +135,45 @@ function renderGallery(product) {
   show(0);
 }
 
-function nameHtml(p) {
-  const name = escapeHtml(p.name);
-  if (!/^https?:\/\//.test(p.url ?? '')) return name;
-  return `<a href="${escapeHtml(p.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${name}</a>`;
-}
-
 // โหลด data.json (ทั้งในเครื่องและบน GitHub Pages) แล้วคำนวณทุกอย่างในเบราว์เซอร์
 async function loadData() {
   state.data = await api(`data.json?t=${Date.now()}`);
-  const live = isLive();
+  const live = state.data.provider !== 'mock';
   $('providerBadge').hidden = false;
   $('providerBadge').textContent = live ? `ข้อมูลจริง · ${state.data.provider}` : 'ข้อมูลจำลอง';
   $('providerBadge').classList.toggle('live', live);
   $('refresh').hidden = !state.data.canRefresh;
-  document.querySelectorAll('.col-total').forEach((el) => { el.hidden = !live; });
+  // ซ่อนส่วนที่แหล่งข้อมูลปัจจุบันไม่มีให้
+  document.querySelectorAll('[data-needs]').forEach((el) => { el.hidden = !has(el.dataset.needs); });
+  if (!has('channels')) state.channel = 'all';
   $('updated').textContent = state.data.lastUpdated
     ? `อัปเดต ${new Date(state.data.lastUpdated).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' })}`
     : '';
 }
 
 function fillSelects() {
-  for (const c of state.data.countries) $('country').add(new Option(c.name, c.code));
   for (const c of state.data.categories) $('category').add(new Option(`${c.icon} ${c.name}`, c.id));
 }
 
 function currentFilters(limit) {
-  const { country, category, q, days, sort } = state;
-  return { country, category, q, days, sort, limit };
+  const { category, minCommission, q, days, sort, channel } = state;
+  return { category, minCommission, q, days, sort, channel, limit };
 }
 
 function render() {
   const items = ranking(state.data, currentFilters(50));
-  state.items = items;
+  const [label, help] = SORT_LABEL[state.sort];
+  const ch = CHANNEL_LABEL[state.channel];
+  $('tableTitle').textContent = `${label}${ch} · ${state.days} วันล่าสุด`;
+  $('chartTitle').textContent = `แนวโน้มยอดขาย${ch} 5 อันดับแรก`;
+  $('salesHead').textContent = state.channel === 'live' ? 'ยอดขาย Live' : state.channel === 'video' ? 'ยอดขายวิดีโอ' : 'ยอดขาย';
+  $('sortHelp').textContent = help;
 
-  const label = state.sort === 'growth' ? 'สินค้ามาแรง' : 'สินค้าขายดี';
-  $('tableTitle').textContent = `${label} · ${state.days} วันล่าสุด`;
-  const live = isLive();
   $('empty').hidden = items.length > 0;
-  const noDaily = live && items.length > 0 && items.every((p) => p.sales === 0);
+  const noDaily = has('soldTotal') && items.length > 0 && items.every((p) => p.sales === 0);
   $('notice').hidden = !noDaily;
   $('notice').textContent = 'ตอนนี้มีข้อมูลแค่วันเดียว ยอดขายรายวันคำนวณจากยอดสะสมที่เพิ่มขึ้น จึงจะเริ่มแสดงหลังเก็บข้อมูลครั้งถัดไป ระหว่างนี้ตารางเรียงตามยอดขายสะสมแทน';
+
   $('rows').innerHTML = items.map((p) => `
     <tr data-id="${escapeHtml(p.id)}">
       <td class="num"><span class="rank">${p.rank}</span>${rankMoveHtml(p.rank, p.prevRank)}</td>
@@ -163,13 +182,17 @@ function render() {
           ${thumbHtml(p)}
           <div>
             <div class="pname">${nameHtml(p)}</div>
-            <div class="pmeta">${escapeHtml(p.shop)} · ${categoryName(p.category)} · ${countryName(p.country)} · ฿${fmt.format(p.price)}</div>
+            <div class="pmeta">${escapeHtml(p.shop)} · ${categoryName(p.category)} · ฿${fmt.format(p.price)}</div>
           </div>
         </div>
       </td>
-      <td class="num">${fmt.format(p.sales)}</td>
-      <td class="num hide-sm">฿${fmtCompact.format(p.gmv)}</td>
-      ${live ? `<td class="num hide-sm">${p.soldTotal == null ? '–' : fmt.format(p.soldTotal)}</td>` : ''}
+      <td class="num">${fmt.format(p.sales)} ชิ้น<span class="sub-val">฿${fmtCompact.format(p.gmv)}</span></td>
+      ${has('commission') ? `<td class="num">${p.commissionRate != null
+        ? `<span class="com-rate">${pct(p.commissionRate)}</span><span class="sub-val">฿${fmt.format(Math.round(p.commissionPerUnit))}/ชิ้น</span>`
+        : '–'}</td>` : ''}
+      ${has('channels') ? `<td class="hide-sm">${channelHtml(p)}</td>` : ''}
+      ${has('creators') ? `<td class="num hide-sm">${fmt.format(p.creators)} คน<span class="sub-val">${p.salesPerCreator != null ? `${fmt.format(Math.round(p.salesPerCreator))} ชิ้น/คน` : ''}</span></td>` : ''}
+      ${has('soldTotal') ? `<td class="num hide-sm">${p.soldTotal == null ? '–' : fmt.format(p.soldTotal)}</td>` : ''}
       <td class="num">${growthHtml(p.growth)}</td>
       <td class="hide-sm">${sparkline(p.spark)}</td>
     </tr>`).join('');
@@ -178,11 +201,12 @@ function render() {
 }
 
 function renderTrendChart(top) {
+  const field = state.channel === 'live' ? 'liveSales' : state.channel === 'video' ? 'videoSales' : 'sales';
   const series = top.map((p) => history(state.data, p.id, 30));
   const labels = series[0]?.map((h) => shortDate(h.date)) ?? [];
   const datasets = top.map((p, i) => ({
-    label: p.name,
-    data: series[i].map((h) => h.sales),
+    label: `${p.name} (${p.shop})`,
+    data: series[i].map((h) => h[field]),
     borderColor: LINE_COLORS[i],
     backgroundColor: LINE_COLORS[i],
   }));
@@ -199,37 +223,49 @@ function openDetail(id) {
   const hist = history(state.data, id, 60);
   const last7 = hist.slice(-7);
   const sum = (arr, k) => arr.reduce((s, h) => s + h[k], 0);
+  const sales7 = sum(last7, 'sales');
+  const rate = product.commissionRate;
 
-  const hasViews = hist.some((h) => h.views > 0);
   $('dTitle').textContent = product.image ? product.name : `${product.icon} ${product.name}`;
+  $('dMeta').textContent = `${product.shop} · ${categoryName(product.category)} · ราคา ฿${fmt.format(product.price)}`;
   renderGallery(product);
-  $('dMeta').textContent = `${product.shop} · ${categoryName(product.category)} · ${countryName(product.country)} · ราคา ฿${fmt.format(product.price)}`;
-  $('dKpis').innerHTML = [
-    ['ยอดขาย 7 วัน', `${fmt.format(sum(last7, 'sales'))} ชิ้น`],
-    ['ยอดขาย 7 วัน (บาท)', `฿${fmtCompact.format(sum(last7, 'gmv'))}`],
-    ...(hasViews ? [['ยอดวิว 7 วัน', fmtCompact.format(sum(last7, 'views'))]] : []),
-    ['ขายสูงสุด/วัน', `${fmt.format(Math.max(...hist.map((h) => h.sales)))} ชิ้น`],
-  ].map(([l, v]) => `<div class="kpi"><div class="label">${l}</div><div class="value">${v}</div></div>`).join('');
+
+  const kpis = [['ยอดขาย 7 วัน', `${fmt.format(sales7)} ชิ้น`]];
+  if (rate != null) {
+    kpis.push(['ค่าคอม', `${pct(rate)} · ฿${fmt.format(Math.round(product.price * rate))}/ชิ้น`]);
+    kpis.push(['ค่าคอมรวม 7 วัน', `฿${fmtCompact.format(sum(last7, 'gmv') * rate)}`]);
+  }
+  if (has('channels') && sales7) {
+    kpis.push(['ขายผ่าน Live', pct(sum(last7, 'liveSales') / sales7)]);
+    kpis.push(['ขายผ่านวิดีโอ', pct(sum(last7, 'videoSales') / sales7)]);
+  }
+  if (has('creators')) kpis.push(['ครีเอเตอร์ที่โปรโมท', `${fmt.format(hist[hist.length - 1]?.creators ?? 0)} คน`]);
+  if (has('videos')) kpis.push(['วิดีโอใหม่ 7 วัน', fmt.format(sum(last7, 'videos'))]);
+  if (has('lives')) kpis.push(['ไลฟ์ 7 วัน', fmt.format(sum(last7, 'lives'))]);
+  $('dKpis').innerHTML = kpis.map(([l, v]) => `<div class="kpi"><div class="label">${l}</div><div class="value">${v}</div></div>`).join('');
 
   const options = lineOptions();
-  options.scales.y1 = {
-    position: 'right', beginAtZero: true, grid: { display: false },
-    ticks: { callback: (v) => fmtCompact.format(v) },
-  };
-  const data = {
-    labels: hist.map((h) => shortDate(h.date)),
-    datasets: [
-      { label: 'ยอดขาย (ชิ้น)', data: hist.map((h) => h.sales), borderColor: LINE_COLORS[0], backgroundColor: LINE_COLORS[0], yAxisID: 'y' },
-      { label: 'ยอดวิว', data: hist.map((h) => h.views), borderColor: LINE_COLORS[1], backgroundColor: LINE_COLORS[1], yAxisID: 'y1', borderDash: [4, 4] },
-    ],
-  };
-  if (!hasViews) {
-    data.datasets.pop();
-    delete options.scales.y1;
+  const labels = hist.map((h) => shortDate(h.date));
+  let datasets;
+  if (has('channels')) {
+    // แท่งซ้อน: ยอดขายแยกช่องทาง + เส้นจำนวนครีเอเตอร์
+    options.scales.x.stacked = true;
+    options.scales.y.stacked = true;
+    datasets = [
+      { type: 'bar', label: 'Live', data: hist.map((h) => h.liveSales), backgroundColor: '#fe2c55', stack: 's' },
+      { type: 'bar', label: 'วิดีโอ', data: hist.map((h) => h.videoSales), backgroundColor: '#25c2c9', stack: 's' },
+      { type: 'bar', label: 'อื่น ๆ', data: hist.map((h) => Math.max(0, h.sales - h.liveSales - h.videoSales)), backgroundColor: cssVar('--border'), stack: 's' },
+    ];
+    if (has('creators')) {
+      options.scales.y1 = { position: 'right', beginAtZero: true, grid: { display: false }, ticks: { callback: (v) => fmtCompact.format(v) } };
+      datasets.push({ type: 'line', label: 'ครีเอเตอร์', data: hist.map((h) => h.creators), borderColor: '#f59e0b', backgroundColor: '#f59e0b', yAxisID: 'y1' });
+    }
+  } else {
+    datasets = [{ type: 'line', label: 'ยอดขาย (ชิ้น)', data: hist.map((h) => h.sales), borderColor: LINE_COLORS[0], backgroundColor: LINE_COLORS[0] }];
   }
   detailChart?.destroy();
   $('detail').showModal();
-  detailChart = new Chart($('detailChart'), { type: 'line', data, options });
+  detailChart = new Chart($('detailChart'), { data: { labels, datasets }, options });
 }
 
 function bindSeg(id, key) {
@@ -257,29 +293,35 @@ async function refresh() {
 
 // ส่งออกอันดับตามตัวกรองปัจจุบันเป็นไฟล์ Excel (สร้างในเบราว์เซอร์ด้วย SheetJS)
 function exportExcel() {
-  const live = isLive();
   const items = ranking(state.data, currentFilters(10000));
   const d = state.days;
   const rows = items.map((p) => ({
     'อันดับ': p.rank,
-    'อันดับเมื่อวาน': p.prevRank ?? '',
     'สินค้า': p.name,
     'ร้าน': p.shop,
     'หมวดหมู่': categoryName(p.category),
-    'ประเทศ': countryName(p.country),
     'ราคา (บาท)': p.price,
     [`ยอดขาย ${d} วัน (ชิ้น)`]: p.sales,
     [`ยอดขาย ${d} วัน (บาท)`]: p.gmv,
+    ...(has('commission') ? {
+      'ค่าคอม (%)': p.commissionRate != null ? Math.round(p.commissionRate * 1000) / 10 : '',
+      'ค่าคอม/ชิ้น (บาท)': p.commissionPerUnit != null ? Math.round(p.commissionPerUnit) : '',
+      [`ค่าคอมรวม ${d} วัน (บาท)`]: p.commissionTotal != null ? Math.round(p.commissionTotal) : '',
+    } : {}),
+    ...(has('channels') ? { 'ขายผ่าน Live (%)': Math.round(p.liveShare * 100), 'ขายผ่านวิดีโอ (%)': Math.round(p.videoShare * 100) } : {}),
+    ...(has('creators') ? { 'ครีเอเตอร์': p.creators, 'ยอดขาย/ครีเอเตอร์': p.salesPerCreator != null ? Math.round(p.salesPerCreator) : '' } : {}),
+    ...(has('videos') ? { [`วิดีโอใหม่ ${d} วัน`]: p.videos } : {}),
+    ...(has('lives') ? { [`ไลฟ์ ${d} วัน`]: p.lives } : {}),
+    ...(has('soldTotal') ? { 'ยอดขายสะสม': p.soldTotal ?? '' } : {}),
     'เติบโต (%)': Math.round(p.growth * 10) / 10,
-    ...(live ? { 'ยอดขายสะสม': p.soldTotal ?? '' } : { 'ยอดวิว': p.views }),
     'ลิงก์': p.url ?? '',
   }));
   const ws = XLSX.utils.json_to_sheet(rows);
-  ws['!cols'] = [6, 12, 40, 18, 18, 10, 10, 16, 16, 10, 14, 40].map((wch) => ({ wch }));
+  ws['!cols'] = Object.keys(rows[0] ?? {}).map((k) => ({ wch: k === 'สินค้า' || k === 'ลิงก์' ? 40 : Math.max(10, k.length + 2) }));
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, state.sort === 'growth' ? 'สินค้ามาแรง' : 'สินค้าขายดี');
+  XLSX.utils.book_append_sheet(wb, ws, SORT_LABEL[state.sort][0]);
   const date = state.data.dates[state.data.dates.length - 1] ?? 'empty';
-  XLSX.writeFile(wb, `tiktok-${state.sort === 'growth' ? 'trending' : 'bestsellers'}-${date}.xlsx`);
+  XLSX.writeFile(wb, `tiktok-affiliate-${state.sort}-${state.channel}-${date}.xlsx`);
 }
 
 // ตรวจทุก 5 นาทีว่ามีข้อมูลใหม่หรือยัง (หลัง cron/GitHub Actions ทำงาน)
@@ -296,9 +338,10 @@ async function init() {
   await loadData();
   fillSelects();
   bindSeg('sort', 'sort');
+  bindSeg('channel', 'channel');
   bindSeg('days', 'days');
-  $('country').addEventListener('change', (e) => { state.country = e.target.value; render(); });
   $('category').addEventListener('change', (e) => { state.category = e.target.value; render(); });
+  $('minCommission').addEventListener('change', (e) => { state.minCommission = Number(e.target.value); render(); });
   let searchTimer;
   $('search').addEventListener('input', (e) => {
     clearTimeout(searchTimer);

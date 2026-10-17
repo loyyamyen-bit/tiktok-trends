@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>TikTok Trends</title>
+  <title>TikTok Affiliate Finder</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -14,8 +14,8 @@
     <div class="brand">
       <span class="logo">♪</span>
       <div>
-        <h1>TikTok Trends</h1>
-        <p class="sub">สินค้าขายดีและสินค้าเป็นกระแสบน TikTok Shop</p>
+        <h1>TikTok Affiliate Finder</h1>
+        <p class="sub">หาสินค้าขายดีสำหรับทำ Live และวิดีโอ · ร้านไทยบน TikTok Shop</p>
       </div>
     </div>
     <div class="status">
@@ -30,26 +30,41 @@
       <div class="seg" id="sort">
         <button data-value="sales" class="active">🔥 ขายดี</button>
         <button data-value="growth">🚀 มาแรง</button>
+        <button data-value="commission" data-needs="commission">💰 ค่าคอมสูง</button>
+        <button data-value="opportunity" data-needs="creators">🎯 คู่แข่งน้อย</button>
+      </div>
+      <div class="seg" id="channel" data-needs="channels">
+        <button data-value="all" class="active">ทุกช่องทาง</button>
+        <button data-value="live">🔴 Live</button>
+        <button data-value="video">🎬 วิดีโอ</button>
       </div>
       <div class="seg" id="days">
         <button data-value="1">1 วัน</button>
         <button data-value="7" class="active">7 วัน</button>
         <button data-value="30">30 วัน</button>
       </div>
-      <label class="field">ประเทศ
-        <select id="country"><option value="">ทุกประเทศ</option></select>
-      </label>
+    </section>
+    <section class="filters">
       <label class="field">หมวดหมู่
         <select id="category"><option value="">ทุกหมวด</option></select>
+      </label>
+      <label class="field" data-needs="commission">ค่าคอมขั้นต่ำ
+        <select id="minCommission">
+          <option value="0">ทั้งหมด</option>
+          <option value="0.1">10% ขึ้นไป</option>
+          <option value="0.15">15% ขึ้นไป</option>
+          <option value="0.2">20% ขึ้นไป</option>
+        </select>
       </label>
       <label class="field search">ค้นหา
         <input id="search" type="search" placeholder="ชื่อสินค้าหรือร้าน" autocomplete="off">
       </label>
     </section>
+    <p id="sortHelp" class="help"></p>
 
     <section class="card">
       <div class="card-head">
-        <h2>แนวโน้มยอดขาย 5 อันดับแรก</h2>
+        <h2 id="chartTitle">แนวโน้มยอดขาย 5 อันดับแรก</h2>
         <span class="muted">ยอดขายรายวัน 30 วันล่าสุด (ชิ้น)</span>
       </div>
       <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
@@ -69,9 +84,11 @@
             <tr>
               <th class="num">#</th>
               <th>สินค้า</th>
-              <th class="num">ยอดขาย (ชิ้น)</th>
-              <th class="num hide-sm">ยอดขาย (บาท)</th>
-              <th class="num hide-sm col-total" hidden>ยอดขายสะสม</th>
+              <th class="num" id="salesHead">ยอดขาย</th>
+              <th class="num" data-needs="commission">ค่าคอม</th>
+              <th class="hide-sm" data-needs="channels">ช่องทางขาย</th>
+              <th class="num hide-sm" data-needs="creators">ครีเอเตอร์</th>
+              <th class="num hide-sm" data-needs="soldTotal">ยอดขายสะสม</th>
               <th class="num">เติบโต</th>
               <th class="hide-sm">14 วัน</th>
             </tr>

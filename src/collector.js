@@ -33,7 +33,7 @@ function toDailyRows(date, rows) {
     const sales = last && last.date < date ? Math.max(0, r.soldTotal - last.soldTotal) : 0;
     if (!last || last.date < date) store.setTotal(r.productId, date, r.soldTotal);
     const price = store.getProduct(r.productId)?.price ?? 0;
-    return { productId: r.productId, sales, views: r.views ?? 0, gmv: sales * price, soldTotal: r.soldTotal };
+    return { ...r, sales, gmv: sales * price };
   });
 }
 
