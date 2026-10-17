@@ -1,5 +1,5 @@
 {
-  "actorId": "tictechid/vanzi-tiktok-shop",
+  "actorId": "bovi/tiktok-shop-scraper",
   "maxItemsPerKeyword": 20,
   "concurrency": 2,
   "keywords": {

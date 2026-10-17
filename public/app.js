@@ -88,10 +88,30 @@ function lineOptions() {
   };
 }
 
+// ลิงก์รูปจาก TikTok อาจหมดอายุ — ถ้าโหลดไม่ได้ให้แสดงไอคอนหมวดแทน
 function thumbHtml(p) {
   return p.image
-    ? `<span class="thumb"><img src="${escapeHtml(p.image)}" alt="" loading="lazy" referrerpolicy="no-referrer"></span>`
+    ? `<span class="thumb"><img src="${escapeHtml(p.image)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith('${p.icon}')"></span>`
     : `<span class="thumb">${p.icon}</span>`;
+}
+
+function renderGallery(product) {
+  const images = product.images?.length ? product.images : product.image ? [product.image] : [];
+  $('dGallery').hidden = images.length === 0;
+  if (!images.length) return;
+  const show = (i) => {
+    $('dMainImg').src = images[i];
+    $('dThumbs').querySelectorAll('button').forEach((b, k) => b.classList.toggle('active', k === i));
+  };
+  const link = /^https?:\/\//.test(product.url ?? '')
+    ? `<a class="btn" href="${escapeHtml(product.url)}" target="_blank" rel="noopener">ดูสินค้าบน TikTok ↗</a>`
+    : '';
+  $('dThumbs').innerHTML = (images.length > 1
+    ? images.map((src) => `<button type="button"><img src="${escapeHtml(src)}" alt="" referrerpolicy="no-referrer"></button>`).join('')
+    : '') + link;
+  $('dThumbs').querySelectorAll('button').forEach((b, i) => b.addEventListener('click', () => show(i)));
+  $('dMainImg').onerror = () => { $('dGallery').hidden = true; };
+  show(0);
 }
 
 function nameHtml(p) {
@@ -181,7 +201,8 @@ function openDetail(id) {
   const sum = (arr, k) => arr.reduce((s, h) => s + h[k], 0);
 
   const hasViews = hist.some((h) => h.views > 0);
-  $('dTitle').textContent = `${product.icon} ${product.name}`;
+  $('dTitle').textContent = product.image ? product.name : `${product.icon} ${product.name}`;
+  renderGallery(product);
   $('dMeta').textContent = `${product.shop} · ${categoryName(product.category)} · ${countryName(product.country)} · ราคา ฿${fmt.format(product.price)}`;
   $('dKpis').innerHTML = [
     ['ยอดขาย 7 วัน', `${fmt.format(sum(last7, 'sales'))} ชิ้น`],

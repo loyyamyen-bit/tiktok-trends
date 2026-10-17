@@ -36,12 +36,21 @@ function parsePrice(value) {
   return m ? Number(m[0]) : null;
 }
 
+// รูปสินค้าอาจมาเป็น string, array ของ string หรือ array ของ { url } — เก็บไว้ไม่เกิน 6 รูป
+function imageList(item) {
+  const raw = item.image_urls ?? item.imageUrls ?? item.images ?? item.image ?? item.cover ?? [];
+  return (Array.isArray(raw) ? raw : [raw])
+    .map((x) => (typeof x === 'string' ? x : x?.url ?? x?.url_list?.[0]))
+    .filter((u) => typeof u === 'string' && /^https?:\/\//.test(u))
+    .slice(0, 6);
+}
+
 // รองรับชื่อฟิลด์จากหลาย actor
 export function normalizeItem(item, country, category) {
   const rawId = item.product_id ?? item.productId ?? item.id;
   const soldTotal = parseCount(item.sold_count ?? item.soldCount ?? item.sold ?? item.sales);
   if (rawId == null || soldTotal == null) return null;
-  const images = item.image_urls ?? item.imageUrls ?? item.images;
+  const images = imageList(item);
   return {
     id: `${country}-${rawId}`,
     name: item.title ?? item.name ?? item.product_name ?? String(rawId),
@@ -50,7 +59,8 @@ export function normalizeItem(item, country, category) {
     price: parsePrice(item.price ?? item.price_min ?? item.sale_price) ?? 0,
     shop: item.shop_name ?? item.seller_name ?? item.shopName ?? '',
     icon: CATEGORIES.find((c) => c.id === category)?.icon ?? '🛍️',
-    image: (Array.isArray(images) ? images[0] : images) ?? item.image ?? item.cover ?? null,
+    image: images[0] ?? null,
+    images,
     url: item.product_url ?? item.url ?? null,
     soldTotal,
   };
@@ -62,7 +72,12 @@ function buildInput(actorId, country, keywords, maxItems) {
     return {
       keywords,
       maxResults: maxItems,
-      proxyConfiguration: { useApifyProxy: true, apifyProxyGroups: ['RESIDENTIAL'], countryCode: country },
+      proxyConfiguration: {
+        useApifyProxy: true,
+        apifyProxyGroups: ['RESIDENTIAL'],
+        apifyProxyCountry: country,
+        countryCode: country,
+      },
     };
   }
   return { mode: 'search', region: country.toLowerCase(), search_keywords: keywords, max_items: maxItems };
